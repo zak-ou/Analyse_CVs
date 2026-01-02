@@ -9,7 +9,7 @@ def main():
     
     # Get absolute path to the streamlit app
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    app_path = os.path.join(current_dir, "ui", "main_app.py")
+    app_path = os.path.join(current_dir, "app.py")
     
     print(f"Running Streamlit app from: {app_path}")
     

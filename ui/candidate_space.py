@@ -1,6 +1,7 @@
 import streamlit as st
 import database as db
 import os
+import json
 from streamlit_option_menu import option_menu
 
 def render_candidate_space():
@@ -88,12 +89,12 @@ def render_candidate_space():
 
     # --- 2. SIDEBAR (NAVIGATION) ---
     with st.sidebar:
-        st.markdown(f"<div style='text-align: center; margin-bottom: 20px;'><h3 style='color:#6C5CE7; margin:0;'>👤 Espace Candidat</h3><p style='color:#888;'>{st.session_state['username']}</p></div>", unsafe_allow_html=True)
+        # Menus are now handled here, profile is handled in app.py
         
         menu = option_menu(
             menu_title=None,
-            options=["Offres d'Emploi", "Mes Candidatures"],
-            icons=["briefcase-fill", "file-earmark-check-fill"], 
+            options=["Offres d'Emploi", "Mes Candidatures", "Mon Profil"],
+            icons=["briefcase-fill", "file-earmark-check-fill", "person-fill"], 
             menu_icon="cast",
             default_index=0,
             styles={
@@ -105,15 +106,15 @@ def render_candidate_space():
         )
         
 
-
     # --- 3. FONCTION POPUP (DIALOG) ---
     @st.dialog("Détails de l'opportunité")
     def show_job_dialog(job):
         # En-tête du popup
         st.markdown(f"""
-        <h2 style='color:#6C5CE7; margin-bottom:5px;'>{job['title']}</h2>
+        <h2 style='color:#6C5CE7; margin-bottom:5px;'>{job['titre']}</h2>
+        <h4 style='color:#888; margin-top:0;'>Domaine: {job['domaine']}</h4>
         <div style='display:flex; gap:15px; color:#666; font-size:14px; margin-bottom:20px;'>
-            <span>📅 Date limite : <b>{job['deadline']}</b></span>
+            <span>📅 Date limite : <b>{job['date_limite']}</b></span>
             <span>🎓 Expérience min : <b>{job['experience_min']} ans</b></span>
         </div>
         """, unsafe_allow_html=True)
@@ -122,7 +123,7 @@ def render_candidate_space():
         st.info(job['description'])
 
         st.markdown("#### 🛠 Compétences requises")
-        skills_html = "".join([f"<span class='skill-pill'>{s.strip()}</span>" for s in job['skills_required'].split(',')])
+        skills_html = "".join([f"<span class='skill-pill'>{s.strip()}</span>" for s in job['competences_requises'].split(',')])
         st.markdown(skills_html, unsafe_allow_html=True)
         
         st.divider()
@@ -134,15 +135,14 @@ def render_candidate_space():
                 # Sauvegarde locale
                 upload_dir = "data/uploads"
                 os.makedirs(upload_dir, exist_ok=True)
-                file_path = os.path.join(upload_dir, f"{st.session_state['username']}_{uploaded_cv.name}")
+                file_path = os.path.join(upload_dir, f"{st.session_state['user_id']}_{uploaded_cv.name}") # Use user_id to avoid name collision with new schema
                 with open(file_path, "wb") as f:
                     f.write(uploaded_cv.getbuffer())
                 
                 # Sauvegarde BDD
-                if db.submit_application(job['id'], st.session_state['user_id'], file_path):
+                if db.submit_postulation(job['id'], st.session_state['user_id'], file_path):
                     st.balloons()
                     st.success("Votre CV a été transmis au recruteur !")
-                    # On attend un peu pour que l'utilisateur voie le message
                     import time
                     time.sleep(2)
                     st.rerun()
@@ -157,11 +157,39 @@ def render_candidate_space():
     if menu == "Offres d'Emploi":
         st.markdown("<h2 style='color:#262730;'>💼 Dernières opportunités</h2>", unsafe_allow_html=True)
         st.caption("Consultez les offres et postulez directement.")
+        
+        # --- FILTRES ET RECHERCHE ---
+        with st.container(border=True):
+            col_search, col_f1, col_f2 = st.columns([2, 1, 1])
+            with col_search:
+                search_query = st.text_input("🔍 Rechercher un poste", placeholder="Ex: Développeur Python...")
+            
+            jobs_all = db.get_offers()
+            domains = sorted(list(set([j['domaine'] for j in jobs_all if j['domaine']])))
+            
+            with col_f1:
+                filter_domain = st.selectbox("Domaine", ["Tous"] + domains)
+            with col_f2:
+                filter_exp = st.number_input("Expérience Max (ans)", min_value=0, max_value=20, value=20)
+
         st.markdown("---")
 
-        jobs = db.get_jobs()
+        # Filtrage de la liste
+        jobs = []
+        for j in jobs_all:
+            # Filtre Recherche
+            if search_query and search_query.lower() not in j['titre'].lower() and search_query.lower() not in j['description'].lower():
+                continue
+            # Filtre Domaine
+            if filter_domain != "Tous" and j['domaine'] != filter_domain:
+                continue
+            # Filtre Expérience
+            if j['experience_min'] and j['experience_min'] > filter_exp:
+                continue
+            jobs.append(j)
+
         if not jobs:
-            st.info("🔎 Aucune offre disponible pour le moment.")
+            st.info("🔎 Aucune offre ne correspond à vos critères.")
         else:
             # Création d'une grille propre (2 colonnes)
             cols = st.columns(2) 
@@ -171,12 +199,13 @@ def render_candidate_space():
                     # LE CŒUR DU DESIGN : Le conteneur sert de carte
                     with st.container(border=True):
                         # 1. Titre
-                        st.markdown(f"<div class='job-title'>{job['title']}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='job-title'>{job['titre']}</div>", unsafe_allow_html=True)
+                        st.caption(f"Domaine : {job['domaine']}")
                         
                         # 2. Métadonnées (Icônes et texte gris)
                         st.markdown(f"""
                         <div class='job-meta'>
-                            <span>🗓 {job['deadline']}</span>
+                            <span>🗓 {job['date_limite']}</span>
                             <span>⏳ {job['experience_min']} ans d'exp.</span>
                         </div>
                         """, unsafe_allow_html=True)
@@ -185,37 +214,36 @@ def render_candidate_space():
                         st.markdown(f"<div class='job-desc'>{job['description']}</div>", unsafe_allow_html=True)
                         
                         # 4. Tags de compétences (limités à 3 pour ne pas casser le design)
-                        skills = job['skills_required'].split(',')[:3]
+                        skills = job['competences_requises'].split(',')[:3]
                         skills_html = "".join([f"<span class='skill-pill'>{s.strip()}</span>" for s in skills])
                         st.markdown(f"<div style='margin-bottom:15px;'>{skills_html}</div>", unsafe_allow_html=True)
                         
-                        # 5. BOUTON INTÉGRÉ (Il est dans le conteneur, donc dans la carte)
-                        # 'use_container_width=True' le force à prendre toute la largeur
+                        # 5. BOUTON INTÉGRÉ
                         if st.button("Voir l'offre & Postuler", key=f"job_{job['id']}", use_container_width=True):
                             show_job_dialog(job)
 
-   # --- SECTION : MES CANDIDATURES ---
+    # --- SECTION : MES CANDIDATURES ---
     elif menu == "Mes Candidatures":
         st.title("Suivi des candidatures")
         
-        my_apps = db.get_applications_for_candidate(st.session_state['user_id'])
+        my_apps = db.get_postulations_for_candidate(st.session_state['user_id'])
         
         if not my_apps:
             st.info("Vous n'avez pas encore postulé.")
         else:
             # Affichage sous forme de liste propre
             for app in my_apps:
-                is_analyzed = app['score'] is not None
+                is_analyzed = app['donnees_analysees'] is not None
                 status_class = "status-done" if is_analyzed else "status-pending"
                 status_text = "Analysé" if is_analyzed else "En attente"
-                score_display = f"{app['score']}/100" if is_analyzed else "--"
+                score_display = f"{app['score']}/100" if (is_analyzed and app['score']) else "--"
 
-                with st.expander(f"{app['job_title']} (Postulé le {app['upload_date']})"):
+                with st.expander(f"{app['titre']} (Postulé le {app['date_postulation']})"):
                     col1, col2 = st.columns([2, 1])
                     
                     with col1:
                         st.markdown(f"**Statut :** <span class='status-badge {status_class}'>{status_text}</span>", unsafe_allow_html=True)
-                        st.write(f"**Fichier :** {os.path.basename(app['cv_filepath'])}")
+                        st.write(f"**Fichier :** {os.path.basename(app['cv_url'])}")
                     
                     with col2:
                         st.metric("Votre Score", score_display)
@@ -223,6 +251,37 @@ def render_candidate_space():
                     if is_analyzed:
                         st.markdown("---")
                         st.caption("Détails de l'analyse automatique :")
-                        # On suppose que 'skills' est stocké dans la BDD ou récupéré
-                        if 'skills' in app and app['skills']:
-                            st.write(f"**Compétences détectées :** {app['skills']}")
+                        try:
+                            # Try parsing JSON
+                            data = json.loads(app['donnees_analysees'])
+                            skills_detected = data.get('skills', [])
+                            st.write(f"**Compétences détectées :** {', '.join(skills_detected)}")
+                        except:
+                            st.write("Erreur d'affichage des détails.")
+
+    # --- SECTION : MON PROFIL ---
+    elif menu == "Mon Profil":
+        st.title("👤 Mon Profil")
+        st.markdown("---")
+        
+        col1, col2 = st.columns([1, 2])
+        with col1:
+             st.markdown(f"""
+                <div style="text-align: center; padding: 20px; background: white; border-radius: 15px; border: 1px solid #E0E0E0;">
+                    <div style="width: 100px; height: 100px; background: #6C5CE7; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 3rem; margin: 0 auto 15px;">
+                        {st.session_state['username'][0].upper()}
+                    </div>
+                    <h3 style="margin: 0;">{st.session_state['username']}</h3>
+                    <p style="color: #636E72;">{st.session_state['role']}</p>
+                </div>
+             """, unsafe_allow_html=True)
+        
+        with col2:
+            st.subheader("Informations Personnelles")
+            with st.form("profile_form"):
+                st.text_input("Nom Complet", value=st.session_state['username'], disabled=True)
+                st.text_input("Email", value="utilisateur@example.com", disabled=True) 
+                st.text_input("Numéro de Téléphone", value="+212 6XX XXX XXX")
+                
+                if st.form_submit_button("Mettre à jour le profil"):
+                    st.success("Profil mis à jour (simulation)")

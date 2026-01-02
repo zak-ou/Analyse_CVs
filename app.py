@@ -4,11 +4,7 @@ from ui.auth import render_auth
 from ui.candidate_space import render_candidate_space
 from ui.recruiter_space import render_recruiter_space
 from ui.styles import load_css
-import sys
 import os
-
-# Ensure project root is in path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 st.set_page_config(page_title="Recruitment System", layout="wide", page_icon="✨")
 
@@ -26,25 +22,28 @@ def main():
     if not st.session_state['logged_in']:
         render_auth()
     else:
-        # Sidebar Header & Profile
+        # 1. Sidebar Top: Logo, Profile Summary & Menu Header
         with st.sidebar:
+            st.markdown("""
+            <div class="sidebar-logo">
+                <span class="sidebar-logo-icon">🚀</span>
+                <span class="sidebar-logo-text">RecrutIQ</span>
+            </div>
+            """, unsafe_allow_html=True)
+            
             st.markdown(f"""
-            <h1 style='color: #6C5CE7; font-size: 1.4rem; margin-bottom: 15px; display: flex; align-items: center; gap: 10px;'>
-                 Smart Recruiter 🦄
-            </h1>
             <div class="sidebar-profile">
                 <div class="sidebar-avatar">{st.session_state['username'][0].upper()}</div>
-                <div style="flex: 1;">
-                    <div style="font-weight: 600; color: #2D3436; font-size: 0.9rem;">{st.session_state['username']}</div>
-                    <div style="color: #636E72; font-size: 0.75rem;">{st.session_state['role']}</div>
+                <div class="sidebar-info">
+                    <div class="sidebar-name">{st.session_state['username']}</div>
+                    <div class="sidebar-role">{st.session_state['role']}</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
-            # Spacer for Navigation (which comes from role renderers)
-            st.write("")
+            st.markdown("<p style='font-size: 0.75rem; color: #A0AEC0; font-weight: 600; text-transform: uppercase; margin-bottom: 10px; padding-left: 10px;'>Menu Principal</p>", unsafe_allow_html=True)
 
-        # Render Space based on role (This injects the Navigation Radio in the middle)
+        # 2. Render Space based on role (Navigation Menu)
         if st.session_state['role'] == "Candidat":
             render_candidate_space()
         elif st.session_state['role'] == "Recruteur":
@@ -52,14 +51,14 @@ def main():
         else:
             st.error("Rôle inconnu. Veuillez vous reconnecter.")
 
-        # Sidebar Footer (Logout)
+        # 3. Sidebar Bottom (Logout)
         with st.sidebar:
-            st.markdown("---")
-            st.write("") # Spacer
-            if st.button("🚪 Déconnexion", use_container_width=True):
+            st.markdown('<div class="sidebar-footer">', unsafe_allow_html=True)
+            if st.button("🚪 Déconnexion", use_container_width=True, type="secondary"):
                 st.session_state['logged_in'] = False
                 st.session_state['role'] = None
                 st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
