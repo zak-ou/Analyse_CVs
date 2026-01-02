@@ -17,26 +17,37 @@ def add_offer_dialog():
     with st.form("new_job_form"):
         col1, col2 = st.columns(2)
         with col1:
-            title = st.text_input("Titre du poste")
+            title = st.text_input("Titre du poste", key="new_job_title")
         with col2:
-            domaine = st.text_input("Domaine (ex: IT, Finance...)")
+            domaine = st.text_input("Domaine (ex: IT, Finance...)", key="new_job_domain")
         
-        desc = st.text_area("Description du poste")
-        skills = st.text_area("Compétences requises (séparées par des virgules)")
-        exp = st.number_input("Expérience minimum (années)", min_value=0)
+        desc = st.text_area("Description du poste", key="new_job_desc")
+        skills = st.text_area("Compétences requises (séparées par des virgules)", key="new_job_skills_unique_v2")
+        # Ensure unique keys for all inputs
+
+        c1, c2 = st.columns(2)
+        with c1:
+            exp = st.number_input("Expérience minimum (années)", min_value=0, key="new_job_exp")
+        with c2:
+            nb_postes = st.number_input("Nombre de postes à pourvoir", min_value=1, value=1, key="new_job_nb")
         
         col3, col4 = st.columns(2)
         with col3:
             deadline_date = st.date_input("Date limite de candidature")
         with col4:
-            deadline_time = st.time_input("Heure limite de candidature")
+            # Default to current time for standard workday deadlines or immediate
+            default_time = datetime.datetime.now().time()
+            deadline_time = st.time_input("Heure limite de candidature", value=default_time)
         
         submit = st.form_submit_button("Publier l'offre")
         
         if submit:
             if title and skills and domaine:
-                deadline = deadline_date 
-                db.create_offer(title, desc, skills, exp, deadline, st.session_state['user_id'], domaine)
+                # Combine date and time
+                deadline_dt = datetime.datetime.combine(deadline_date, deadline_time)
+                deadline = deadline_dt.strftime("%Y-%m-%d %H:%M:%S")
+                
+                db.create_offer(title, desc, skills, exp, deadline, st.session_state['user_id'], domaine, nb_postes)
                 st.success("Offre publiée avec succès !")
                 st.rerun()
             else:
@@ -89,19 +100,39 @@ def render_recruiter_space():
                         with col_e2:
                             # Handle date parsing
                             try:
-                                d_str = str(job['date_limite']).split(' ')[0]
-                                d_val = datetime.datetime.strptime(d_str, "%Y-%m-%d").date()
+                                d_str = str(job['date_limite'])
+                                if len(d_str) > 10:
+                                    dt_val = datetime.datetime.strptime(d_str, "%Y-%m-%d %H:%M:%S")
+                                    d_val = dt_val.date()
+                                    t_val = dt_val.time()
+                                else:
+                                    d_val = datetime.datetime.strptime(d_str, "%Y-%m-%d").date()
+                                    t_val = datetime.time(0, 0)
                             except:
                                 d_val = datetime.date.today()
+                                t_val = datetime.time(0, 0)
+                            
                             u_date = st.date_input("Date limite", value=d_val)
+                            u_time = st.time_input("Heure limite", value=t_val)
+                            
                             u_status = st.selectbox("Statut", ["actif", "clôturé"], index=0 if job['statut'] == 'actif' else 1)
                         
                         u_desc = st.text_area("Description", value=job['description'])
                         u_skills = st.text_area("Compétences", value=job['competences_requises'])
-                        u_exp = st.number_input("Expérience Min (années)", value=job['experience_min'] or 0, min_value=0)
+                        c_edit1, c_edit2 = st.columns(2)
+                        with c_edit1:
+                            u_exp = st.number_input("Expérience Min (années)", value=job['experience_min'] or 0, min_value=0)
+                        with c_edit2:
+                            current_nb = job['nombre_postes'] if 'nombre_postes' in job.keys() else 1
+                            if current_nb is None: current_nb = 1 # Handle potential NULLs
+                            u_nb_postes = st.number_input("Nombre de postes", value=current_nb, min_value=1)
                         
                         if st.form_submit_button("💾 Enregistrer les modifications"):
-                            db.update_offer(job['id'], u_titre, u_desc, u_skills, u_exp, u_date, u_domaine, u_status)
+                            # Combine date and time
+                            u_deadline_dt = datetime.datetime.combine(u_date, u_time)
+                            u_deadline_str = u_deadline_dt.strftime("%Y-%m-%d %H:%M:%S")
+                            
+                            db.update_offer(job['id'], u_titre, u_desc, u_skills, u_exp, u_deadline_str, u_domaine, u_status, u_nb_postes)
                             st.session_state[f"edit_{job['id']}"] = False
                             st.success("Offre mise à jour avec succès !")
                             st.rerun()
@@ -315,3 +346,62 @@ def render_recruiter_space():
                         st.bar_chart(df_skills)
                     else:
                         st.info("Aucune compétence détectée.")
+
+                    # Candidate Selection (Top N) - Only if status is Closed OR Deadline passed
+                    is_closed = selected_job['statut'] == 'clôturé'
+                    # Check date/time
+                    try:
+                        d_str = str(selected_job['date_limite'])
+                        if len(d_str) > 10:
+                            deadline_dt = datetime.datetime.strptime(d_str, "%Y-%m-%d %H:%M:%S")
+                            is_past_deadline = datetime.datetime.now() > deadline_dt
+                        else:
+                            # Fallback for old dates (YYYY-MM-DD) - assume end of day or strict date > today
+                            deadline_d = datetime.datetime.strptime(d_str, "%Y-%m-%d").date()
+                            is_past_deadline = datetime.date.today() > deadline_d
+                    except Exception as e:
+                        is_past_deadline = False
+                    
+                    if is_closed or is_past_deadline:
+                        st.markdown("---")
+                        st.write("### 🏆 Candidats Sélectionnés")
+                        if not is_closed:
+                             st.info(f"La date limite ({selected_job['date_limite']}) est passée, voici les candidats retenus provisoirement basés sur le score.")
+                        
+                        nb_postes = selected_job['nombre_postes'] if 'nombre_postes' in selected_job.keys() else 1
+                        if nb_postes is None: nb_postes = 1
+
+                        # Sort apps by score descending
+                        # Filter out None scores
+                        scored_apps = [a for a in apps if a['score'] is not None and a['score'] > 0]
+                        scored_apps.sort(key=lambda x: x['score'], reverse=True)
+                        
+                        selected = scored_apps[:nb_postes]
+                        rejected = scored_apps[nb_postes:] # Or just the rest
+                        
+                        if selected:
+                            st.success(f"Top {len(selected)} candidat(s) pour {nb_postes} poste(s).")
+                            sel_data = []
+                            for s in selected:
+                                sel_data.append({
+                                    "Nom": f"{s['prenom']} {s['nom']}",
+                                    "Score": s['score'],
+                                    "Email": s['email'],
+                                    "Statut": "ACCEPTED ✅"
+                                })
+                            st.table(pd.DataFrame(sel_data))
+                        else:
+                            st.warning("Aucun candidat n'a de score suffisant pour être sélectionné.")
+
+                        if rejected:
+                            with st.expander("Voir les candidats non retenus"):
+                                rej_data = []
+                                for r in rejected:
+                                    rej_data.append({
+                                        "Nom": f"{r['prenom']} {r['nom']}",
+                                        "Score": r['score'], 
+                                        "Statut": "REFUSED ❌"
+                                    })
+                                st.table(pd.DataFrame(rej_data))
+                    else:
+                        st.info("La sélection des candidats sera disponible une fois l'offre clôturée ou la date limite passée.")

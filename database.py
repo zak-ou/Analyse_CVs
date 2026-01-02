@@ -109,12 +109,12 @@ def verify_user(email, password, role):
 
 # --- Job Management (Offres) ---
 
-def create_offer(titre, description, competences, exp_min, date_limite, recruteur_id, domaine):
+def create_offer(titre, description, competences, exp_min, date_limite, recruteur_id, domaine, nombre_postes=1):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
-    c.execute('''INSERT INTO offres (titre, description, competences_requises, experience_min, date_limite, statut, recruteur_id, domaine)
-                 VALUES (?, ?, ?, ?, ?, 'actif', ?, ?)''', 
-              (titre, description, competences, exp_min, date_limite, recruteur_id, domaine))
+    c.execute('''INSERT INTO offres (titre, description, competences_requises, experience_min, date_limite, statut, recruteur_id, domaine, nombre_postes)
+                 VALUES (?, ?, ?, ?, ?, 'actif', ?, ?, ?)''', 
+              (titre, description, competences, exp_min, date_limite, recruteur_id, domaine, nombre_postes))
     conn.commit()
     conn.close()
 
@@ -140,13 +140,13 @@ def get_offer_by_id(offer_id):
     conn.close()
     return job
 
-def update_offer(offer_id, titre, description, competences, exp_min, date_limite, domaine, statut):
+def update_offer(offer_id, titre, description, competences, exp_min, date_limite, domaine, statut, nombre_postes):
     conn = sqlite3.connect(DB_NAME)
     c = conn.cursor()
     c.execute('''UPDATE offres 
-                 SET titre=?, description=?, competences_requises=?, experience_min=?, date_limite=?, domaine=?, statut=?
+                 SET titre=?, description=?, competences_requises=?, experience_min=?, date_limite=?, domaine=?, statut=?, nombre_postes=?
                  WHERE id=?''', 
-              (titre, description, competences, exp_min, date_limite, domaine, statut, offer_id))
+              (titre, description, competences, exp_min, date_limite, domaine, statut, nombre_postes, offer_id))
     conn.commit()
     conn.close()
 

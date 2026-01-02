@@ -4,6 +4,7 @@ from ui.auth import render_auth
 from ui.candidate_space import render_candidate_space
 from ui.recruiter_space import render_recruiter_space
 from ui.styles import load_css
+from app_logic.automation import run_pending_analyses
 import os
 
 st.set_page_config(page_title="Recruitment System", layout="wide", page_icon="âœ¨")
@@ -11,6 +12,9 @@ st.set_page_config(page_title="Recruitment System", layout="wide", page_icon="âœ
 def main():
     # Initialize DB
     db.init_db()
+    # Run Automation Checks
+    run_pending_analyses()
+    
     load_css() # Load custom CSS from styles.py
 
     # Session State Initialization

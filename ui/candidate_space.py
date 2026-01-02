@@ -233,20 +233,71 @@ def render_candidate_space():
         else:
             # Affichage sous forme de liste propre
             for app in my_apps:
-                is_analyzed = app['donnees_analysees'] is not None
-                status_class = "status-done" if is_analyzed else "status-pending"
-                status_text = "Analysé" if is_analyzed else "En attente"
-                score_display = f"{app['score']}/100" if (is_analyzed and app['score']) else "--"
+                # 1. Verification status (Closed/Date passed) and Rank
+                # We need to fetch the offer details + all postulations for this offer to determine rank
+                # (This is a bit heavy inside a loop, but okay for prototype)
+                
+                # Check offer state
+                offer_status = app['statut'] # 'actif' or 'clôturé'
+                offer_deadline_str = str(app['date_limite'])
+                is_closed = offer_status == 'clôturé'
+                try:
+                    if len(offer_deadline_str) > 10:
+                        deadline_dt = datetime.datetime.strptime(offer_deadline_str, "%Y-%m-%d %H:%M:%S")
+                        is_past_deadline = datetime.datetime.now() > deadline_dt
+                    else:
+                        deadline_d = datetime.datetime.strptime(offer_deadline_str, "%Y-%m-%d").date()
+                        is_past_deadline = datetime.date.today() > deadline_d
+                except:
+                    is_past_deadline = False
+                
+                decision_status = "En attente"
+                decision_color = "orange" # default pending
+                
+                if is_closed or is_past_deadline:
+                    # Determine Rank
+                    # Fetch all apps for this offer
+                    all_offer_apps = db.get_postulations_for_offer(app['offre_id'])
+                     # Filter valid scores
+                    scored_offer_apps = [a for a in all_offer_apps if a['score'] is not None and a['score'] > 0]
+                    scored_offer_apps.sort(key=lambda x: x['score'], reverse=True)
+                    
+                    # Find my position
+                    my_rank = -1
+                    for idx, a in enumerate(scored_offer_apps):
+                        if a['id'] == app['id']: # assuming app['id'] is postulation id
+                            my_rank = idx + 1
+                            break
+                    
+                    # Get nb_postes
+                    # We need to get the offer details fully to get nb_postes if not in view
+                    # The get_offers joined query might not have it if it wasn't selected or if get_postulations_for_candidate view is limited
+                    # Let's assume we need to fetch specific offer details
+                    full_offer = db.get_offer_by_id(app['offre_id'])
+                    nb_postes = full_offer['nombre_postes'] if full_offer and 'nombre_postes' in full_offer.keys() else 1
+                    if nb_postes is None: nb_postes = 1
 
+                    if my_rank != -1 and my_rank <= nb_postes:
+                        decision_status = "Félicitations ! Vous êtes retenu ✅"
+                        decision_color = "green"
+                    else:
+                        decision_status = "Candidature non retenue ❌"
+                        decision_color = "red"
+                
+                # Display
+                is_analyzed = app['donnees_analysees'] is not None
+                
                 with st.expander(f"{app['titre']} (Postulé le {app['date_postulation']})"):
                     col1, col2 = st.columns([2, 1])
                     
                     with col1:
-                        st.markdown(f"**Statut :** <span class='status-badge {status_class}'>{status_text}</span>", unsafe_allow_html=True)
+                        st.write(f"**Statut de l'offre:** {'Clôturée' if (is_closed or is_past_deadline) else 'En cours'}")
+                        st.markdown(f"**Résultat :** <span style='color:{decision_color}; font-weight:bold;'>{decision_status}</span>", unsafe_allow_html=True)
                         st.write(f"**Fichier :** {os.path.basename(app['cv_url'])}")
                     
                     with col2:
-                        st.metric("Votre Score", score_display)
+                        score_val = f"{app['score']}/100" if (is_analyzed and app['score']) else "--"
+                        st.metric("Votre Score", score_val)
                     
                     if is_analyzed:
                         st.markdown("---")
