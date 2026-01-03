@@ -5,13 +5,19 @@ from pdf2image import convert_from_path
 from PIL import Image
 
 class OCRService:
+    _reader_cache = {}
+    
     def __init__(self, languages=['en', 'fr']):
         """
         Initializes the OCR service with specified languages.
         """
-        print(f"Loading EasyOCR model for languages: {languages}...")
-        self.reader = easyocr.Reader(languages)
-        print("EasyOCR model loaded.")
+        lang_key = tuple(sorted(languages))
+        if lang_key not in OCRService._reader_cache:
+            print(f"Loading EasyOCR model for languages: {languages}...")
+            OCRService._reader_cache[lang_key] = easyocr.Reader(languages)
+            print("EasyOCR model loaded.")
+        
+        self.reader = OCRService._reader_cache[lang_key]
 
     def extract_text(self, file_path):
         """

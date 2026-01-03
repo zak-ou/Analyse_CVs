@@ -18,20 +18,26 @@ except LookupError:
 # Pyresparser disabled due to Spacy compatibility issues
 
 class ParserService:
+    _nlp_cache = None
+
     def __init__(self):
         self.email_regex = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'
         self.phone_regex = r'(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}'
         
         # Load Spacy Model directly for custom extraction
-        try:
-            import spacy
-            if not spacy.util.is_package("en_core_web_sm"):
-                os.system("python -m spacy download en_core_web_sm")
-            self.nlp = spacy.load("en_core_web_sm")
-            print("Spacy 'en_core_web_sm' loaded successfully.")
-        except Exception as e:
-            print(f"Warning: Could not load Spacy model: {e}")
-            self.nlp = None
+        if ParserService._nlp_cache is None:
+            try:
+                import spacy
+                if not spacy.util.is_package("en_core_web_sm"):
+                    print("Downloading spacy model...")
+                    os.system("python -m spacy download en_core_web_sm")
+                ParserService._nlp_cache = spacy.load("en_core_web_sm")
+                print("Spacy 'en_core_web_sm' loaded successfully.")
+            except Exception as e:
+                print(f"Warning: Could not load Spacy model: {e}")
+                ParserService._nlp_cache = None
+        
+        self.nlp = ParserService._nlp_cache
 
     def parse_resume(self, file_path):
         """

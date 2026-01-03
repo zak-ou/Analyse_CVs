@@ -43,6 +43,8 @@ def init_db():
                     experience_min INTEGER,
                     date_limite DATE,
                     statut TEXT DEFAULT 'actif',
+                    nombre_postes INTEGER DEFAULT 1,
+                    notifications_envoyees INTEGER DEFAULT 0,
                     FOREIGN KEY (recruteur_id) REFERENCES recruteurs (id)
                 )''')
 
@@ -55,10 +57,26 @@ def init_db():
                     cv_url TEXT,
                     donnees_analysees TEXT, -- Stored as JSON
                     score Real,
+                    statut TEXT DEFAULT 'Pending',
+                    email_envoye INTEGER DEFAULT 0,
                     FOREIGN KEY (candidat_id) REFERENCES candidats (id),
                     FOREIGN KEY (offre_id) REFERENCES offres (id)
                 )''')
     
+    # Check for missing columns and add them (Migration)
+    try:
+        c.execute("ALTER TABLE offres ADD COLUMN nombre_postes INTEGER DEFAULT 1")
+    except: pass
+    try:
+        c.execute("ALTER TABLE offres ADD COLUMN notifications_envoyees INTEGER DEFAULT 0")
+    except: pass
+    try:
+        c.execute("ALTER TABLE postulations ADD COLUMN statut TEXT DEFAULT 'Pending'")
+    except: pass
+    try:
+        c.execute("ALTER TABLE postulations ADD COLUMN email_envoye INTEGER DEFAULT 0")
+    except: pass
+
     conn.commit()
     conn.close()
 
@@ -125,8 +143,8 @@ def get_offers(recruteur_id=None):
     if recruteur_id:
         c.execute("SELECT * FROM offres WHERE recruteur_id = ?", (recruteur_id,))
     else:
-        # Les candidats ne voient que les offres actives
-        c.execute("SELECT * FROM offres WHERE statut = 'actif'")
+        # Les candidats ne voient que les offres actives ET dont le délai n'est pas passé
+        c.execute("SELECT * FROM offres WHERE statut = 'actif' AND datetime(date_limite) >= datetime('now', 'localtime')")
     jobs = c.fetchall()
     conn.close()
     return jobs
@@ -139,6 +157,35 @@ def get_offer_by_id(offer_id):
     job = c.fetchone()
     conn.close()
     return job
+
+def get_market_offers():
+    """Fetches all active offers with recruiter details for the market news feed."""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    # On ne montre que ce qui est actif et non expiré
+    c.execute('''SELECT o.*, r.nom as recruteur_nom, r.prenom as recruteur_prenom, r.domaine as recruteur_domaine 
+                 FROM offres o 
+                 JOIN recruteurs r ON o.recruteur_id = r.id 
+                 WHERE o.statut = 'actif' AND datetime(o.date_limite) >= datetime('now', 'localtime')
+                 ORDER BY o.id DESC''')
+    offers = c.fetchall()
+    conn.close()
+    return offers
+
+def set_offer_notified(offer_id):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("UPDATE offres SET notifications_envoyees = 1 WHERE id = ?", (offer_id,))
+    conn.commit()
+    conn.close()
+
+def delete_offer(offer_id):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("DELETE FROM offres WHERE id = ?", (offer_id,))
+    conn.commit()
+    conn.close()
 
 def update_offer(offer_id, titre, description, competences, exp_min, date_limite, domaine, statut, nombre_postes):
     conn = sqlite3.connect(DB_NAME)
@@ -160,9 +207,26 @@ def submit_postulation(offre_id, candidat_id, cv_url):
     if c.fetchone():
         conn.close()
         return False # Already applied
+    
+    try:
+        c.execute('''INSERT INTO postulations (offre_id, candidat_id, cv_url, statut) 
+                     VALUES (?, ?, ?, 'Pending')''', (offre_id, candidat_id, cv_url))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error submitting postulation: {e}")
+        return False
+    finally:
+        conn.close()
         
-    c.execute("INSERT INTO postulations (offre_id, candidat_id, cv_url, score) VALUES (?, ?, ?, NULL)",
-              (offre_id, candidat_id, cv_url))
+def update_postulation(offre_id, candidat_id, cv_url):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    # Reset score and analyzed data when CV is updated
+    c.execute("""UPDATE postulations 
+                 SET cv_url = ?, score = NULL, donnees_analysees = NULL, statut = 'Pending', email_envoye = 0, date_postulation = CURRENT_TIMESTAMP
+                 WHERE offre_id = ? AND candidat_id = ?""", 
+              (cv_url, offre_id, candidat_id))
     conn.commit()
     conn.close()
     return True
@@ -172,7 +236,7 @@ def get_postulations_for_offer(offre_id):
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     # Join with candidats to get name
-    c.execute('''SELECT p.*, c.nom, c.prenom, c.email
+    c.execute('''SELECT p.*, c.nom as nom, c.prenom as prenom, c.email as email, p.statut as statut_postulation
                  FROM postulations p 
                  JOIN candidats c ON p.candidat_id = c.id 
                  WHERE p.offre_id = ?''', (offre_id,))

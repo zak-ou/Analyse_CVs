@@ -9,11 +9,18 @@ import os
 
 st.set_page_config(page_title="Recruitment System", layout="wide", page_icon="✨")
 
+@st.cache_resource
+def get_controller():
+    from app_logic.controller import RecruitmentController
+    return RecruitmentController()
+
 def main():
     # Initialize DB
     db.init_db()
-    # Run Automation Checks
-    run_pending_analyses()
+    
+    # Start Background Automation Worker (Runs every 60s in a separate thread)
+    from app_logic.automation import start_background_worker
+    start_background_worker(interval_seconds=60)
     
     load_css() # Load custom CSS from styles.py
 
@@ -26,43 +33,48 @@ def main():
     if not st.session_state['logged_in']:
         render_auth()
     else:
-        # 1. Sidebar Top: Logo, Profile Summary & Menu Header
-        with st.sidebar:
-            st.markdown("""
-            <div class="sidebar-logo">
-                <span class="sidebar-logo-icon">🚀</span>
-                <span class="sidebar-logo-text">RecrutIQ</span>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.markdown(f"""
-            <div class="sidebar-profile">
-                <div class="sidebar-avatar">{st.session_state['username'][0].upper()}</div>
-                <div class="sidebar-info">
-                    <div class="sidebar-name">{st.session_state['username']}</div>
-                    <div class="sidebar-role">{st.session_state['role']}</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            st.markdown("<p style='font-size: 0.75rem; color: #A0AEC0; font-weight: 600; text-transform: uppercase; margin-bottom: 10px; padding-left: 10px;'>Menu Principal</p>", unsafe_allow_html=True)
-
-        # 2. Render Space based on role (Navigation Menu)
-        if st.session_state['role'] == "Candidat":
-            render_candidate_space()
-        elif st.session_state['role'] == "Recruteur":
+        # Special Handling for Recruiter: They manage their own full sidebar
+        if st.session_state['role'] == "Recruteur":
             render_recruiter_space()
+            
         else:
-            st.error("Rôle inconnu. Veuillez vous reconnecter.")
+            # --- DEFAULT SIDEBAR FRAME (For Candidates/Others) ---
+            
+            # 1. Sidebar Top: Logo, Profile Summary & Menu Header
+            with st.sidebar:
+                st.markdown("""
+                <div class="sidebar-logo">
+                    <span class="sidebar-logo-icon">🚀</span>
+                    <span class="sidebar-logo-text">RecrutIQ</span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown(f"""
+                <div class="sidebar-profile">
+                    <div class="sidebar-avatar">{st.session_state['username'][0].upper()}</div>
+                    <div class="sidebar-info">
+                        <div class="sidebar-name">{st.session_state['username']}</div>
+                        <div class="sidebar-role">{st.session_state['role']}</div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown("<p style='font-size: 0.75rem; color: #A0AEC0; font-weight: 600; text-transform: uppercase; margin-bottom: 10px; padding-left: 10px;'>Menu Principal</p>", unsafe_allow_html=True)
 
-        # 3. Sidebar Bottom (Logout)
-        with st.sidebar:
-            st.markdown('<div class="sidebar-footer">', unsafe_allow_html=True)
-            if st.button("🚪 Déconnexion", use_container_width=True, type="secondary"):
-                st.session_state['logged_in'] = False
-                st.session_state['role'] = None
-                st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+            # 2. Render Space
+            if st.session_state['role'] == "Candidat":
+                render_candidate_space()
+            else:
+                st.error("Rôle inconnu. Veuillez vous reconnecter.")
+
+            # 3. Sidebar Bottom (Logout)
+            with st.sidebar:
+                st.markdown('<div class="sidebar-footer">', unsafe_allow_html=True)
+                if st.button("🚪 Déconnexion", width="stretch", type="secondary", key="global_logout"):
+                    st.session_state['logged_in'] = False
+                    st.session_state['role'] = None
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
