@@ -238,7 +238,12 @@ def render_candidate_space():
                 # (This is a bit heavy inside a loop, but okay for prototype)
                 
                 # Check offer state
-                offer_status = app['statut'] # 'actif' or 'clôturé'
+                # Check offer state
+                # Note: db.get_postulations_for_candidate now returns Aliased columns:
+                # statut_offre, statut_postulation
+                offer_status = app['statut_offre'] 
+                user_status = app['statut_postulation']
+                
                 offer_deadline_str = str(app['date_limite'])
                 is_closed = offer_status == 'clôturé'
                 try:
@@ -251,38 +256,23 @@ def render_candidate_space():
                 except:
                     is_past_deadline = False
                 
-                decision_status = "En attente"
-                decision_color = "orange" # default pending
+                decision_status = user_status if user_status else "En attente"
+                decision_color = "orange"
                 
-                if is_closed or is_past_deadline:
-                    # Determine Rank
-                    # Fetch all apps for this offer
-                    all_offer_apps = db.get_postulations_for_offer(app['offre_id'])
-                     # Filter valid scores
-                    scored_offer_apps = [a for a in all_offer_apps if a['score'] is not None and a['score'] > 0]
-                    scored_offer_apps.sort(key=lambda x: x['score'], reverse=True)
-                    
-                    # Find my position
-                    my_rank = -1
-                    for idx, a in enumerate(scored_offer_apps):
-                        if a['id'] == app['id']: # assuming app['id'] is postulation id
-                            my_rank = idx + 1
-                            break
-                    
-                    # Get nb_postes
-                    # We need to get the offer details fully to get nb_postes if not in view
-                    # The get_offers joined query might not have it if it wasn't selected or if get_postulations_for_candidate view is limited
-                    # Let's assume we need to fetch specific offer details
-                    full_offer = db.get_offer_by_id(app['offre_id'])
-                    nb_postes = full_offer['nombre_postes'] if full_offer and 'nombre_postes' in full_offer.keys() else 1
-                    if nb_postes is None: nb_postes = 1
-
-                    if my_rank != -1 and my_rank <= nb_postes:
-                        decision_status = "Félicitations ! Vous êtes retenu ✅"
-                        decision_color = "green"
-                    else:
-                        decision_status = "Candidature non retenue ❌"
-                        decision_color = "red"
+                if decision_status == "Accepted":
+                    decision_status = "Félicitations ! Vous êtes retenu ✅"
+                    decision_color = "green"
+                elif decision_status == "Refused":
+                    decision_status = "Candidature non retenue ❌"
+                    decision_color = "red"
+                else:
+                    # Fallback or Pending
+                    decision_status = "En attente"
+                    if is_closed or is_past_deadline:
+                         # If status is still Pending but offer closed, it implies not yet processed or not selected in top N (but automation marks Refused).
+                         # Maybe automation hasn't run yet?
+                         # Display "Traitement en cours"
+                         decision_status = "Traitement en cours..."
                 
                 # Display
                 is_analyzed = app['donnees_analysees'] is not None

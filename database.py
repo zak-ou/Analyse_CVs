@@ -185,7 +185,10 @@ def get_postulations_for_candidate(candidat_id):
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     # Join with offres to get title and status
-    c.execute('''SELECT p.*, o.titre, o.statut, o.date_limite
+    # Collision warning: p.statut and o.statut. 
+    # We alias o.statut to statut_offre. p.statut is inside p.* (as statut currently? Or need to alias?)
+    # Safest is to explicitly select key columns or alias o.statut.
+    c.execute('''SELECT p.*, o.titre, o.statut as statut_offre, o.date_limite, p.statut as statut_postulation
                  FROM postulations p 
                  JOIN offres o ON p.offre_id = o.id 
                  WHERE p.candidat_id = ?''', (candidat_id,))
@@ -203,5 +206,12 @@ def update_postulation_results(postulation_id, score, analysis_json):
         analysis_str = str(analysis_json)
     
     c.execute("UPDATE postulations SET score = ?, donnees_analysees = ? WHERE id = ?", (score, analysis_str, postulation_id))
+    conn.commit()
+    conn.close()
+
+def update_postulation_status(postulation_id, statut, email_envoye=False):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("UPDATE postulations SET statut = ?, email_envoye = ? WHERE id = ?", (statut, email_envoye, postulation_id))
     conn.commit()
     conn.close()

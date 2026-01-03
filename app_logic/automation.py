@@ -1,64 +1,42 @@
-import database as db
-from app_logic.controller import RecruitmentController
-import datetime
-import os
-import json
+from app_logic.email_service import EmailService
 
 def run_pending_analyses():
     """
-    Checks for offers where the deadline has passed but some applications remain unanalyzed.
-    Triggers analysis automatically.
+    Checks for offers where the deadline has passed.
+    1. Triggers analysis automatically for unanalyzed apps.
+    2. Performs candidate selection (Accepted/Refused) and sends emails.
     """
     try:
-        # Get all offers
-        jobs = db.get_offers(recruteur_id=None) # Get all active offers primarily, but we need all really?
-        # db.get_offers returns only active ones if recruteur_id is None in current implementation?
-        # Let's check db.get_offers implementation in database.py
-        # It says: if recruteur_id: ... else: SELECT * FROM offres WHERE statut = 'actif'
-        
-        # We need to analyze offers even if they are 'clôturé' if they missed analysis?
-        # Or specifically check for 'actif' ones that just expired.
-        # Actually we should probably check ALL offers or have a specific query. 
-        # But for now, let's stick to 'actif' offers that might have expired just now,
-        # OR offers that are closed but might have pending CVs (though usually closing implies done).
-        
-        # For simplicity/safety, let's fetch ALL offers using a direct query or modify get_offers.
-        # But since I can't easily modify get_offers signature without breaking things, let's use a raw query here 
-        # or use get_offers(None) if it covers enough.
-        # Actually, let's iterate 'actif' offers. If they are expired, we analyze AND maybe close them?
-        
-        # Let's define a safe connection here
+        # Get all offers - Fetch raw to be safe
         conn = db.sqlite3.connect(db.DB_NAME)
         conn.row_factory = db.sqlite3.Row
         c = conn.cursor()
         c.execute("SELECT * FROM offres")
         all_jobs = c.fetchall()
-        conn.close()
         
         controller = RecruitmentController()
+        email_service = EmailService()
         
         for job in all_jobs:
             # Check if deadline passed
             deadline_str = str(job['date_limite'])
             try:
-                # Handle both YYYY-MM-DD and YYYY-MM-DD HH:MM:SS
                 if len(deadline_str) > 10:
                      deadline_dt = datetime.datetime.strptime(deadline_str, "%Y-%m-%d %H:%M:%S")
+                     is_past = datetime.datetime.now() > deadline_dt
                 else:
                      deadline_dt = datetime.datetime.strptime(deadline_str, "%Y-%m-%d")
-                     # Default to end of day? Or start? usually 00:00
+                     # For old date format, assume passed if today > date
+                     is_past = datetime.date.today() > deadline_dt.date()
                 
-                if datetime.datetime.now() > deadline_dt:
-                    # Expired!
-                    # Check for unanalyzed apps
+                if is_past:
+                    # 1. ANALYSIS PHASE
                     apps = db.get_postulations_for_offer(job['id'])
-                    
-                    # identify unanalyzed
                     unanalyzed = [app for app in apps if not app['score'] and app['cv_url']]
                     
                     if unanalyzed:
+                        # ... (Existing Analysis Logic) ...
                         print(f"Auto-Analyzing {len(unanalyzed)} applications for expired job: {job['titre']}")
-                        
                         required_skills = [s.strip() for s in job['competences_requises'].split(',') if s.strip()]
                         
                         class FileWrapper:
@@ -71,7 +49,6 @@ def run_pending_analyses():
 
                         files_to_process = []
                         app_map = {}
-                        
                         for app in unanalyzed:
                              f_path = app['cv_url']
                              if f_path and os.path.exists(f_path):
@@ -81,18 +58,52 @@ def run_pending_analyses():
                         
                         if files_to_process:
                              results = controller.process_uploads(files_to_process, required_skills)
-                             
                              for res in results:
-                                 fname = res['filename']
-                                 score = res['score']
-                                 if fname in app_map:
-                                     # Update DB
-                                     db.update_postulation_results(app_map[fname], score, res)
-                        
+                                 if res['filename'] in app_map:
+                                     db.update_postulation_results(app_map[res['filename']], res['score'], res)
                         print("Auto-analysis complete.")
+                    
+                    # 2. SELECTION & EMAIL PHASE
+                    # Refresh apps to get new scores
+                    apps = db.get_postulations_for_offer(job['id'])
+                    scored_apps = [a for a in apps if a['score'] is not None and a['score'] > 0]
+                    scored_apps.sort(key=lambda x: x['score'], reverse=True)
+                    
+                    nb_postes = job['nombre_postes'] if job['nombre_postes'] else 1
+                    
+                    selected = scored_apps[:nb_postes]
+                    refused = scored_apps[nb_postes:]
+                    
+                    # Process Selected
+                    for cand in selected:
+                        # Check if already notified
+                        # Fetch 'email_envoye' from row. 
+                        # Note: 'apps' comes from get_postulations_for_offer which selects p.*
+                        # If column was just added, it might be 0/None.
                         
+                        is_sent = cand['email_envoye']
+                        current_status = cand['statut']
+                        
+                        if not is_sent:
+                            print(f"Selecting candidate {cand['nom']} for job {job['titre']}")
+                            # Send Email
+                            sent = email_service.send_acceptance_email(cand['email'], f"{cand['prenom']} {cand['nom']}", job['titre'])
+                            if sent:
+                                db.update_postulation_status(cand['id'], "Accepted", email_envoye=True)
+                        elif current_status != "Accepted":
+                             # Ensure status is correct even if email sent (or manual update)
+                             db.update_postulation_status(cand['id'], "Accepted", email_envoye=True)
+
+                    # Process Refused
+                    for cand in refused:
+                        if cand['statut'] != "Refused":
+                            db.update_postulation_status(cand['id'], "Refused", email_envoye=False)
+                            
             except ValueError:
-                continue # Bad date format
+                continue 
+
+        conn.close()
 
     except Exception as e:
-        print(f"Error in auto-analysis: {e}")
+        print(f"Error in auto-analysis/selection: {e}")
+
