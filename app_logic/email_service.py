@@ -92,19 +92,24 @@ L'équipe Recrutement
         """
         return self._send_email(candidate_email, subject, body)
 
-    def send_offer_closed_email_to_recruiter(self, recruiter_email, recruiter_name, job_title, nb_candidates):
-        """Sends a notification to the recruiter when an offer expires."""
+    def send_offer_closed_email_to_recruiter(self, recruiter_email, recruiter_name, job_title, stats):
+        """Sends a notification to the recruiter when an offer expires with detailed stats."""
         subject = f"Clôture de votre offre : {job_title}"
         body = f"""
 Bonjour {recruiter_name},
 
 Le délai de candidature pour votre offre "{job_title}" est arrivé à son terme.
-Nous avons reçu un total de {nb_candidates} candidatures.
+
+📊 Statistiques finales :
+- Nombre total de candidatures : {stats['total']}
+- Candidats sélectionnés : {stats['accepted']}
+- Candidats refusés : {stats['refused']}
+- Score moyen de l'offre : {stats['avg_score']:.1f}/100
 
 Le système a procédé à l'analyse et à la sélection automatique des meilleurs profils. 
-Vous pouvez consulter le rapport détaillé dans votre tableau de bord.
+Vous pouvez consulter le rapport détaillé et télécharger le CSV dans votre tableau de bord des statistiques.
 
 Cordialement,
-Système RecrutIQ
+L'équipe RecrutIQ
         """
         return self._send_email(recruiter_email, subject, body)

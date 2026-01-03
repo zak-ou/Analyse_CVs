@@ -511,26 +511,14 @@ def render_recruiter_space():
                                 pass
                         
                         # Logic to determine display status
-                        status_db = app['statut_postulation'] # Corrected column name access
-                        deadline_str = selected_job['date_limite']
-                        is_past = False
-                        try:
-                            if len(str(deadline_str)) > 10:
-                                deadline_dt = datetime.datetime.strptime(str(deadline_str), "%Y-%m-%d %H:%M:%S")
-                                is_past = datetime.datetime.now() > deadline_dt
-                            else:
-                                deadline_dt = datetime.datetime.strptime(str(deadline_str), "%Y-%m-%d")
-                                is_past = datetime.date.today() > deadline_dt.date()
-                        except:
-                            pass
+                        status_db = app['statut_postulation'] 
                         
-                        etat_display = "En attente ⏳"
                         if status_db == "Accepted":
                             etat_display = "✅ Sélectionné"
                         elif status_db == "Refused":
                             etat_display = "❌ Non retenu"
-                        elif is_past:
-                            etat_display = "Traitement final ⏳"
+                        else:
+                            etat_display = "En attente ⏳"
 
                         app_data.append({
                             "Candidat": f"{app['prenom']} {app['nom']}",

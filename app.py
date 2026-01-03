@@ -7,7 +7,13 @@ from ui.styles import load_css
 from app_logic.automation import run_pending_analyses
 import os
 
-st.set_page_config(page_title="Recruitment System", layout="wide", page_icon="✨")
+import time
+
+st.set_page_config(page_title="RecrutIQ - Smart Recruitment", layout="wide", page_icon="✨")
+
+# Background refresh for "real-time" feel (every 60s)
+if 'last_refresh' not in st.session_state:
+    st.session_state['last_refresh'] = time.time()
 
 @st.cache_resource
 def get_controller():
@@ -75,6 +81,13 @@ def main():
                     st.session_state['role'] = None
                     st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
+                
+    # Trigger silent refresh every 60 seconds if logged in
+    if st.session_state.get('logged_in'):
+        current_time = time.time()
+        if current_time - st.session_state['last_refresh'] > 60:
+            st.session_state['last_refresh'] = current_time
+            st.rerun()
 
 if __name__ == "__main__":
     main()

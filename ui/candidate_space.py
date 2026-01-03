@@ -283,16 +283,13 @@ def render_candidate_space():
                 decision_color = "orange"
                 
                 if decision_status == "Accepted":
-                    decision_status = "Félicitations ! Vous êtes retenu ✅"
+                    decision_status = "✅ Sélectionné"
                     decision_color = "green"
                 elif decision_status == "Refused":
-                    decision_status = "Candidature non retenue ❌"
+                    decision_status = "❌ Non retenu"
                     decision_color = "red"
-                elif is_closed or is_past_deadline:
-                    decision_status = "En cours de finalisation ⏳"
-                    decision_color = "#6C5CE7" 
                 else:
-                    decision_status = "Candidature envoyée 📡"
+                    decision_status = "En attente ⏳"
                     decision_color = "orange"
                 
                 # Display

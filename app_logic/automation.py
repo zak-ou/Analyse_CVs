@@ -21,18 +21,22 @@ def start_background_worker(interval_seconds=60):
     if _worker_started:
         return
     
+    _worker_started = True 
+    
     def worker_loop():
-        print(f"🚀 background worker started (interval: {interval_seconds}s)")
+        # Small delay to ensure DB and app are ready
+        time.sleep(5)
+        print(f"🚀 [BACKGROUND] Automation worker started (Interval: {interval_seconds}s)")
         while True:
             try:
                 run_pending_analyses()
             except Exception as e:
-                print(f"❌ Error in background worker loop: {e}")
+                print(f"❌ [BACKGROUND] Error in loop: {e}")
             time.sleep(interval_seconds)
 
-    thread = threading.Thread(target=worker_loop, daemon=True)
+    thread = threading.Thread(target=worker_loop, name="AutomationWorker", daemon=True)
     thread.start()
-    _worker_started = True
+    print(f"📡 [SYSTEM] Background thread '{thread.name}' dispatched.")
 
 def run_pending_analyses():
     """
@@ -102,8 +106,14 @@ def run_pending_analyses():
                     # RE-FETCH to get newly analyzed scores
                     apps = db.get_postulations_for_offer(job['id'])
                     
-                    # PHASE 2: SELECTION
-                    scored_apps = [a for a in apps if a['score'] is not None]
+                    # PHASE 2: SELECTION (All candidates must have a result)
+                    scored_apps = []
+                    for a in apps:
+                        # If analysis failed or hasn't run, score is effectively 0 for selection
+                        score_val = a['score'] if a['score'] is not None else 0
+                        scored_apps.append({'data': a, 'score': score_val})
+                        
+                    # Sort candidates by score
                     scored_apps.sort(key=lambda x: x['score'], reverse=True)
                     
                     nb_postes = job['nombre_postes'] if job['nombre_postes'] else 1
@@ -111,44 +121,55 @@ def run_pending_analyses():
                     selected = scored_apps[:nb_postes]
                     refused = scored_apps[nb_postes:]
                     
-                    # Process Selected
-                    for cand in selected:
+                    # 1. Process Selected
+                    for entry in selected:
+                        cand = entry['data']
                         needs_status_update = cand['statut_postulation'] != "Accepted"
                         needs_email = not cand['email_envoye']
                         
                         if needs_status_update or needs_email:
-                            print(f"Assigning 'Accepted' to {cand['nom']} for job {job['titre']}")
                             if needs_status_update:
                                 db.update_postulation_status(cand['id'], "Accepted", email_envoye=False)
-                            
                             sent = email_service.send_acceptance_email(cand['email'], f"{cand['prenom']} {cand['nom']}", job['titre'])
                             if sent:
                                 db.update_postulation_status(cand['id'], "Accepted", email_envoye=True)
 
-                    # Process Refused
-                    for cand in refused:
+                    # 2. Process Refused
+                    for entry in refused:
+                        cand = entry['data']
                         needs_status_update = cand['statut_postulation'] != "Refused"
                         needs_email = not cand['email_envoye']
                         
                         if needs_status_update or needs_email:
-                            print(f"Assigning 'Refused' to {cand['nom']} for job {job['titre']}")
                             if needs_status_update:
                                 db.update_postulation_status(cand['id'], "Refused", email_envoye=False)
-                                
                             sent = email_service.send_refusal_email(cand['email'], f"{cand['prenom']} {cand['nom']}", job['titre'])
                             if sent:
                                 db.update_postulation_status(cand['id'], "Refused", email_envoye=True)
                     
-                    # PHASE 3: NOTIFY RECRUITER
-                    email_service.send_offer_closed_email_to_recruiter(
+                    # PHASE 3: NOTIFY RECRUITER WITH STATS
+                    # Re-calculate stats for the email
+                    total_apps = len(apps)
+                    avg_score = sum(x['score'] for x in scored_apps) / total_apps if total_apps > 0 else 0
+                    
+                    stats = {
+                        'total': total_apps,
+                        'accepted': len(selected),
+                        'refused': len(refused),
+                        'avg_score': avg_score
+                    }
+                    
+                    sent_r = email_service.send_offer_closed_email_to_recruiter(
                         job['r_email'],
                         f"{job['r_prenom']} {job['r_nom']}",
                         job['titre'],
-                        len(apps)
+                        stats
                     )
-                    # Mark offer as notified
-                    db.set_offer_notified(job['id'])
-                    print(f"Offer {job['titre']} processed and recruiter notified.")
+                    
+                    # Mark offer as notified only if we finished the cycle
+                    if sent_r:
+                        db.set_offer_notified(job['id'])
+                        print(f"✅ Offer '{job['titre']}' fully processed.")
                             
             except ValueError:
                 continue 
