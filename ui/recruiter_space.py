@@ -2,6 +2,7 @@ import streamlit as st
 import database as db
 from app_logic.controller import RecruitmentController
 import pandas as pd
+import plotly.express as px
 import os
 import datetime
 import importlib
@@ -60,7 +61,7 @@ def render_recruiter_space():
     with st.sidebar:
         menu = option_menu(
             menu_title=None,
-            options=["Mes Offres", "Mon Profil", "Statistiques"],
+            options=["Mes Offres", "Statistiques", "Mon Profil"],
             icons=["briefcase-fill", "person-badge-fill", "bar-chart-fill"],
             menu_icon="cast",
             default_index=0,
@@ -180,33 +181,10 @@ def render_recruiter_space():
                         })
                     st.dataframe(pd.DataFrame(app_data))
 
-                    # VISUALIZATIONS
-                    if apps:
-                        scores = [a['Score'] for a in app_data if a['Score'] != "Non analysé"]
-                        if scores:
-                            st.write("### 📈 Statistiques des Candidatures")
-                            col_stat1, col_stat2 = st.columns(2)
-                            with col_stat1:
-                                st.metric("Score Moyen", f"{sum(scores)/len(scores):.2f}/100")
-                            with col_stat2:
-                                st.metric("Meilleur Score", f"{max(scores)}/100")
-                            
-                            # Bar Chart of Scores
-                            chart_data = pd.DataFrame(app_data)
-                            chart_data = chart_data[chart_data['Score'] != "Non analysé"]
-                            if not chart_data.empty:
-                                chart_data['Score'] = chart_data['Score'].astype(float)
-                                st.bar_chart(chart_data, x="Candidat", y="Score")
 
-                            # EXPORT BUTTON
-                            csv = pd.DataFrame(app_data).to_csv(index=False).encode('utf-8')
-                            st.download_button(
-                                label="📥 Télécharger le rapport (CSV)",
-                                data=csv,
-                                file_name=f"rapport_{job['titre']}.csv",
-                                mime="text/csv",
-                                key=f"dl_{job['id']}"
-                            )
+
+                    # EXPORT BUTTON
+
                     
                     # ANALYZE BUTTON
                     if st.button(f"🚀 Analyser les CVs pour '{job['titre']}'", key=f"analyze_{job['id']}"):
@@ -251,29 +229,89 @@ def render_recruiter_space():
                                  st.warning("Aucun fichier CV trouvé sur le disque.")
 
     elif menu == "Mon Profil":
-        st.title("👤 Profil Recruteur")
-        st.markdown("---")
+        # --- Modern Profile Design ---
+        st.markdown("""
+        <style>
+            .profile-header {
+                background: linear-gradient(135deg, #6C5CE7 0%, #a29bfe 100%);
+                padding: 40px;
+                border-radius: 20px;
+                display: flex;
+                align-items: center;
+                color: white;
+                margin-bottom: 30px;
+                box-shadow: 0 10px 20px rgba(108, 92, 231, 0.2);
+            }
+            .profile-avatar {
+                width: 100px;
+                height: 100px;
+                background-color: white;
+                color: #6C5CE7;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 40px;
+                font-weight: bold;
+                margin-right: 25px;
+                box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            }
+            .profile-info h1 {
+                margin: 0;
+                font-size: 2.2rem;
+                font-weight: 700;
+                color: white !important;
+            }
+            .profile-info p {
+                margin: 5px 0 0 0;
+                font-size: 1.1rem;
+                opacity: 0.9;
+            }
+            .info-card {
+                background: white;
+                padding: 25px;
+                border-radius: 15px;
+                border: 1px solid #f0f2f6;
+                box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # Header Section
+        st.markdown(f"""
+        <div class="profile-header">
+            <div class="profile-avatar">{st.session_state['username'][0].upper()}</div>
+            <div class="profile-info">
+                <h1>{st.session_state['username']}</h1>
+                <p>{st.session_state['role']} chez RecrutIQ</p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Main Content Grid
+        c1, c2 = st.columns([1, 2])
         
-        col1, col2 = st.columns([1, 2])
-        with col1:
-             st.markdown(f"""
-                <div style="text-align: center; padding: 20px; background: white; border-radius: 15px; border: 1px solid #E0E0E0;">
-                    <div style="width: 100px; height: 100px; background: #6C5CE7; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 3rem; margin: 0 auto 15px;">
-                        {st.session_state['username'][0].upper()}
-                    </div>
-                    <h3 style="margin: 0;">{st.session_state['username']}</h3>
-                    <p style="color: #636E72;">{st.session_state['role']}</p>
-                </div>
-             """, unsafe_allow_html=True)
+        with c1:
+            st.markdown("### 📌 Détails du Compte")
+            with st.container(): # mimicking card via css above if applied globally, or just cleaner layout
+                 st.info(f"**Email:** {db.verify_user(st.session_state['username'], 'dummy', 'Recruteur')['email'] if False else 'utilisateur@example.com'}") # Placeholder logic fix later or just display known
+                 st.write(f"**Rôle:** {st.session_state['role']}")
+                 st.write("**Statut:** Actif ✅")
         
-        with col2:
-            st.subheader("Informations Professionnelles")
-            with st.form("profile_form_rec"):
-                st.text_input("Nom Complet", value=st.session_state['username'], disabled=True)
-                st.text_input("Entreprise / Domaine", value="RecrutIQ Tech")
-                st.text_input("Poste", value="Responsable RH")
+        with c2:
+            st.markdown("### ✏️ Mise à jour des Informations")
+            with st.form("profile_form_rec_modern"):
+                c_form1, c_form2 = st.columns(2)
+                with c_form1:
+                    st.text_input("Nom Complet", value=st.session_state['username'])
+                    st.text_input("Téléphone", value="+212 600 000 000")
+                with c_form2:
+                    st.text_input("Entreprise", value="RecrutIQ Tech")
+                    st.text_input("Site Web", value="www.recrutiq.com")
                 
-                if st.form_submit_button("Enregistrer les modifications"):
+                st.text_area("Bio / Description", value="Responsable des ressources humaines passionné par la tech.")
+                
+                if st.form_submit_button("Sauvegarder les modifications", type="primary"):
                     st.success("Profil mis à jour avec succès !")
 
     elif menu == "Statistiques":
@@ -285,6 +323,7 @@ def render_recruiter_space():
         if not jobs:
             st.info("Aucune offre disponible pour afficher les statistiques.")
         else:
+            # Dropdown for selecting a job
             job_titles = {job['titre']: job for job in jobs}
             selected_job_title = st.selectbox("Sélectionnez une offre :", list(job_titles.keys()))
             
@@ -295,113 +334,122 @@ def render_recruiter_space():
                 if not apps:
                     st.warning("Aucune candidature trouvée pour cette offre.")
                 else:
-                    # Calculate Stats
-                    total_candidates = len(apps)
-                    scores = [app['score'] for app in apps if app['score'] is not None]
-                    avg_score = sum(scores) / len(scores) if scores else 0
-                    max_score = max(scores) if scores else 0
-                    
-                    # Display KPIs
-                    kpi1, kpi2, kpi3 = st.columns(3)
-                    kpi1.metric("Total Candidats", total_candidates)
-                    kpi2.metric("Score Moyen", f"{avg_score:.2f}/100")
-                    kpi3.metric("Meilleur Score", f"{max_score}/100")
-                    
-                    st.markdown("---")
-                    
-                    # Graph 1: Score Distribution (Bar Chart)
-                    st.write("### Distribution des Scores")
-                    chart_data = []
+                    # --- Data Preparation ---
+                    app_data = []
                     all_skills = []
                     
                     for app in apps:
-                        # Prepare score data
-                        if app['score'] is not None:
-                            chart_data.append({
-                                "Candidat": f"{app['prenom']} {app['nom']}",
-                                "Score": app['score']
-                            })
-                        
-                        # Collect skills
+                        score = app['score'] if app['score'] is not None else 0
+                        # Parse skills
+                        skills = []
                         if app['donnees_analysees']:
                             try:
                                 data = json.loads(app['donnees_analysees'])
                                 if 'skills' in data:
-                                    all_skills.extend(data['skills'])
+                                    skills = data['skills']
+                                    all_skills.extend(skills)
                             except:
                                 pass
-
-                    if chart_data:
-                        df_scores = pd.DataFrame(chart_data)
-                        st.bar_chart(df_scores, x="Candidat", y="Score")
-                    else:
-                        st.info("Aucune donnée de score disponible.")
-
-                    # Graph 2: Top Skills (Horizontal Bar Chart ?)
-                    st.write("### Compétences les plus fréquentes")
-                    if all_skills:
-                        from collections import Counter
-                        skills_counts = Counter(all_skills)
-                        df_skills = pd.DataFrame.from_dict(skills_counts, orient='index', columns=['Count']).sort_values(by='Count', ascending=False).head(10)
-                        st.bar_chart(df_skills)
-                    else:
-                        st.info("Aucune compétence détectée.")
-
-                    # Candidate Selection (Top N) - Only if status is Closed OR Deadline passed
-                    is_closed = selected_job['statut'] == 'clôturé'
-                    # Check date/time
-                    try:
-                        d_str = str(selected_job['date_limite'])
-                        if len(d_str) > 10:
-                            deadline_dt = datetime.datetime.strptime(d_str, "%Y-%m-%d %H:%M:%S")
-                            is_past_deadline = datetime.datetime.now() > deadline_dt
-                        else:
-                            # Fallback for old dates (YYYY-MM-DD) - assume end of day or strict date > today
-                            deadline_d = datetime.datetime.strptime(d_str, "%Y-%m-%d").date()
-                            is_past_deadline = datetime.date.today() > deadline_d
-                    except Exception as e:
-                        is_past_deadline = False
+                        
+                        app_data.append({
+                            "Candidat": f"{app['prenom']} {app['nom']}",
+                            "Email": app['email'],
+                            "Date": app['date_postulation'],
+                            "Score": score,
+                            "Compétences": ", ".join(skills),
+                            "CV": app['cv_url']
+                        })
                     
-                    if is_closed or is_past_deadline:
-                        st.markdown("---")
-                        st.write("### 🏆 Candidats Sélectionnés")
-                        if not is_closed:
-                             st.info(f"La date limite ({selected_job['date_limite']}) est passée, voici les candidats retenus provisoirement basés sur le score.")
-                        
-                        nb_postes = selected_job['nombre_postes'] if 'nombre_postes' in selected_job.keys() else 1
-                        if nb_postes is None: nb_postes = 1
+                    df_apps = pd.DataFrame(app_data)
+                    df_apps['Date'] = pd.to_datetime(df_apps['Date'])
 
-                        # Sort apps by score descending
-                        # Filter out None scores
-                        scored_apps = [a for a in apps if a['score'] is not None and a['score'] > 0]
-                        scored_apps.sort(key=lambda x: x['score'], reverse=True)
-                        
-                        selected = scored_apps[:nb_postes]
-                        rejected = scored_apps[nb_postes:] # Or just the rest
-                        
-                        if selected:
-                            st.success(f"Top {len(selected)} candidat(s) pour {nb_postes} poste(s).")
-                            sel_data = []
-                            for s in selected:
-                                sel_data.append({
-                                    "Nom": f"{s['prenom']} {s['nom']}",
-                                    "Score": s['score'],
-                                    "Email": s['email'],
-                                    "Statut": "ACCEPTED ✅"
-                                })
-                            st.table(pd.DataFrame(sel_data))
+                    # --- 1. KPIs ---
+                    total_candidates = len(apps)
+                    scored_apps = [a for a in app_data if a['Score'] > 0]
+                    avg_score = sum(x['Score'] for x in scored_apps) / len(scored_apps) if scored_apps else 0
+                    max_score = max(x['Score'] for x in scored_apps) if scored_apps else 0
+                    
+                    k1, k2, k3 = st.columns(3)
+                    k1.metric("Total Candidats", total_candidates)
+                    k2.metric("Score Moyen", f"{avg_score:.2f}/100")
+                    k3.metric("Meilleur Score", f"{max_score}/100")
+                    
+                    st.markdown("---")
+
+                    # --- 2. Visualizations ---
+                    st.write("### 📈 Analyse Visuelle")
+                    
+                    tab1, tab2, tab3 = st.columns(3)
+                    
+                    with tab1:
+                        st.caption("Distribution des Scores")
+                        if not df_apps.empty and scored_apps:
+                             fig_hist = px.histogram(df_apps[df_apps['Score'] > 0], x="Score", nbins=20, 
+                                                    title="Répartition des Scores", color_discrete_sequence=['#6C5CE7'])
+                             fig_hist.update_layout(bargap=0.2, showlegend=False, height=300)
+                             st.plotly_chart(fig_hist, use_container_width=True)
                         else:
-                            st.warning("Aucun candidat n'a de score suffisant pour être sélectionné.")
+                            st.info("Scores non disponibles.")
+                            
+                    with tab2:
+                        st.caption("Chronologie des Candidatures")
+                        if not df_apps.empty:
+                            apps_per_day = df_apps.groupby(df_apps['Date'].dt.date).size().reset_index(name='Comptes')
+                            fig_line = px.line(apps_per_day, x='Date', y='Comptes', markers=True, 
+                                              title="Candidatures par Date", color_discrete_sequence=['#00b894'])
+                            fig_line.update_layout(height=300)
+                            st.plotly_chart(fig_line, use_container_width=True)
+                    
+                    with tab3:
+                         st.caption("Top Compétences")
+                         if all_skills:
+                             from collections import Counter
+                             skills_counts = Counter(all_skills).most_common(10)
+                             df_skills = pd.DataFrame(skills_counts, columns=['Skill', 'Count'])
+                             fig_bar = px.bar(df_skills, x='Count', y='Skill', orientation='h', 
+                                             title="Top 10 Compétences", color='Count', color_continuous_scale='Bluered')
+                             fig_bar.update_layout(yaxis={'categoryorder':'total ascending'}, height=300)
+                             st.plotly_chart(fig_bar, use_container_width=True)
+                         else:
+                             st.info("Pas de compétences détectées.")
 
-                        if rejected:
-                            with st.expander("Voir les candidats non retenus"):
-                                rej_data = []
-                                for r in rejected:
-                                    rej_data.append({
-                                        "Nom": f"{r['prenom']} {r['nom']}",
-                                        "Score": r['score'], 
-                                        "Statut": "REFUSED ❌"
-                                    })
-                                st.table(pd.DataFrame(rej_data))
-                    else:
-                        st.info("La sélection des candidats sera disponible une fois l'offre clôturée ou la date limite passée.")
+                    st.markdown("---")
+
+                    # --- 3. Detailed List ---
+                    st.write("### 📋 Liste Détaillée des Candidats")
+                    
+                    # Configure columns for st.dataframe
+                    st.dataframe(
+                        df_apps[['Candidat', 'Email', 'Date', 'Score', 'Compétences', 'CV']],
+                        use_container_width=True,
+                        column_config={
+                            "Date": st.column_config.DateColumn(
+                                "Date Postulation",
+                                format="DD/MM/YYYY"
+                            ),
+                            "Score": st.column_config.ProgressColumn(
+                                "Score",
+                                format="%.1f / 100",
+                                min_value=0,
+                                max_value=100,
+                            ),
+                            "CV": st.column_config.LinkColumn(
+                                "Lien CV",
+                                display_text="Voir CV"
+                            ),
+                            "Email": st.column_config.TextColumn("Email")
+                        },
+                        hide_index=True
+                    )
+
+                    st.markdown("---")
+                    # EXPORT BUTTON
+                    csv_stat = pd.DataFrame(app_data).to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Télécharger le rapport (CSV)",
+                        data=csv_stat,
+                        file_name=f"rapport_{selected_job['titre']}.csv",
+                        mime="text/csv",
+                        key=f"dl_stat_{selected_job['id']}"
+                    )
+
