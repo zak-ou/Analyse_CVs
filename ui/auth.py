@@ -32,7 +32,7 @@ def render_auth():
                 email = st.text_input("Email", value=default_email)
                 password = st.text_input("Mot de passe", type="password")
                 role = st.radio("Je suis :", ["Candidat", "Recruteur"], horizontal=True)
-                submit = st.form_submit_button("Connexion", use_container_width=True)
+                submit = st.form_submit_button("Connexion", width="stretch")
                 
                 if submit:
                     user = db.verify_user(email, password, role)
@@ -41,6 +41,7 @@ def render_auth():
                         st.session_state['logged_in'] = True
                         st.session_state['user_id'] = user['id']
                         st.session_state['username'] = f"{user['prenom']} {user['nom']}"
+                        st.session_state['user_email'] = user['email']
                         st.session_state['role'] = role
                         
                         # Clear temp email
@@ -78,7 +79,7 @@ def render_auth():
                     domaine = st.text_input("Domaine / Entreprise")
                     extra_data['domaine'] = domaine
 
-                submit_reg = st.form_submit_button("Créer un compte", use_container_width=True)
+                submit_reg = st.form_submit_button("Créer un compte", width="stretch")
                 
                 if submit_reg:
                     if nom and prenom and email and password:

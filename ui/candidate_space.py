@@ -2,6 +2,7 @@ import streamlit as st
 import database as db
 import os
 import json
+import datetime
 from streamlit_option_menu import option_menu
 
 def render_candidate_space():
@@ -104,7 +105,6 @@ def render_candidate_space():
                 "nav-link-selected": {"background-color": "#6C5CE7", "font-weight": "600"},
             }
         )
-        
 
     # --- 3. FONCTION POPUP (DIALOG) ---
     @st.dialog("Détails de l'opportunité")
@@ -127,27 +127,57 @@ def render_candidate_space():
         st.markdown(skills_html, unsafe_allow_html=True)
         
         st.divider()
-        st.markdown("#### 🚀 Postuler")
-        uploaded_cv = st.file_uploader("Déposez votre CV (PDF uniquement)", type=['pdf'])
+        # Check if already applied to change button label
+        has_applied = False
+        apps = db.get_postulations_for_candidate(st.session_state['user_id'])
+        for a in apps:
+            if a['offre_id'] == job['id']:
+                has_applied = True
+                break
         
-        if st.button("Envoyer ma candidature", type="primary", use_container_width=True):
+        st.markdown("#### 🚀 " + ("Mettre à jour ma candidature" if has_applied else "Postuler"))
+        if has_applied:
+            st.info("💡 Vous avez déjà postulé à cette offre. En envoyant un nouveau CV, votre score sera réinitialisé et votre candidature sera réévaluée.")
+            
+        uploaded_cv = st.file_uploader("Déposez votre CV (PDF uniquement)", type=['pdf'], key=f"cv_up_{job['id']}")
+        
+        btn_label = "Mettre à jour mon CV" if has_applied else "Envoyer ma candidature"
+        if st.button(btn_label, type="primary", width="stretch", key=f"btn_submit_{job['id']}"):
             if uploaded_cv:
                 # Sauvegarde locale
                 upload_dir = "data/uploads"
                 os.makedirs(upload_dir, exist_ok=True)
-                file_path = os.path.join(upload_dir, f"{st.session_state['user_id']}_{uploaded_cv.name}") # Use user_id to avoid name collision with new schema
+                file_path = os.path.join(upload_dir, f"{st.session_state['user_id']}_{uploaded_cv.name}")
                 with open(file_path, "wb") as f:
                     f.write(uploaded_cv.getbuffer())
                 
                 # Sauvegarde BDD
-                if db.submit_postulation(job['id'], st.session_state['user_id'], file_path):
+                success = False
+                if has_applied:
+                    success = db.update_postulation(job['id'], st.session_state['user_id'], file_path)
+                    msg = "Votre candidature a été mise à jour avec succès !"
+                else:
+                    success = db.submit_postulation(job['id'], st.session_state['user_id'], file_path)
+                    msg = "Votre CV a été transmis au recruteur ! Un email de confirmation vous a été envoyé."
+
+                if success:
+                    # Envoi d'email de confirmation (même pour mise à jour)
+                    try:
+                        from app_logic.email_service import EmailService
+                        email_service = EmailService()
+                        email_service.send_confirmation_email(
+                            st.session_state.get('user_email'),
+                            st.session_state['username'],
+                            job['titre']
+                        )
+                    except:
+                        pass
+
                     st.balloons()
-                    st.success("Votre CV a été transmis au recruteur !")
+                    st.success(msg)
                     import time
                     time.sleep(2)
                     st.rerun()
-                else:
-                    st.warning("Vous avez déjà postulé à cette offre.")
             else:
                 st.error("N'oubliez pas d'ajouter votre CV !")
 
@@ -219,7 +249,7 @@ def render_candidate_space():
                         st.markdown(f"<div style='margin-bottom:15px;'>{skills_html}</div>", unsafe_allow_html=True)
                         
                         # 5. BOUTON INTÉGRÉ
-                        if st.button("Voir l'offre & Postuler", key=f"job_{job['id']}", use_container_width=True):
+                        if st.button("Voir l'offre & Postuler", key=f"job_{job['id']}", width="stretch"):
                             show_job_dialog(job)
 
     # --- SECTION : MES CANDIDATURES ---
@@ -233,14 +263,7 @@ def render_candidate_space():
         else:
             # Affichage sous forme de liste propre
             for app in my_apps:
-                # 1. Verification status (Closed/Date passed) and Rank
-                # We need to fetch the offer details + all postulations for this offer to determine rank
-                # (This is a bit heavy inside a loop, but okay for prototype)
-                
                 # Check offer state
-                # Check offer state
-                # Note: db.get_postulations_for_candidate now returns Aliased columns:
-                # statut_offre, statut_postulation
                 offer_status = app['statut_offre'] 
                 user_status = app['statut_postulation']
                 
@@ -260,19 +283,14 @@ def render_candidate_space():
                 decision_color = "orange"
                 
                 if decision_status == "Accepted":
-                    decision_status = "Félicitations ! Vous êtes retenu ✅"
+                    decision_status = "✅ Sélectionné"
                     decision_color = "green"
                 elif decision_status == "Refused":
-                    decision_status = "Candidature non retenue ❌"
+                    decision_status = "❌ Non retenu"
                     decision_color = "red"
                 else:
-                    # Fallback or Pending
-                    decision_status = "En attente"
-                    if is_closed or is_past_deadline:
-                         # If status is still Pending but offer closed, it implies not yet processed or not selected in top N (but automation marks Refused).
-                         # Maybe automation hasn't run yet?
-                         # Display "Traitement en cours"
-                         decision_status = "Traitement en cours..."
+                    decision_status = "En attente ⏳"
+                    decision_color = "orange"
                 
                 # Display
                 is_analyzed = app['donnees_analysees'] is not None
@@ -324,5 +342,5 @@ def render_candidate_space():
                 st.text_input("Email", value="utilisateur@example.com", disabled=True) 
                 st.text_input("Numéro de Téléphone", value="+212 6XX XXX XXX")
                 
-                if st.form_submit_button("Mettre à jour le profil"):
+                if st.form_submit_button("Mettre à jour le profil", width="stretch"):
                     st.success("Profil mis à jour (simulation)")
