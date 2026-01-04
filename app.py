@@ -5,6 +5,7 @@ from ui.candidate_space import render_candidate_space
 from ui.recruiter_space import render_recruiter_space
 from ui.styles import load_css
 from app_logic.automation import run_pending_analyses
+from ui.home import render_home
 import os
 
 st.set_page_config(page_title="Recruitment System", layout="wide", page_icon="✨")
@@ -21,10 +22,16 @@ def main():
     if 'logged_in' not in st.session_state:
         st.session_state['logged_in'] = False
         st.session_state['role'] = None
+    
+    if 'show_auth' not in st.session_state:
+        st.session_state['show_auth'] = False
 
     # Routing Logic
     if not st.session_state['logged_in']:
-        render_auth()
+        if st.session_state['show_auth']:
+            render_auth()
+        else:
+            render_home()
     else:
         # 1. Sidebar Top: Logo, Profile Summary & Menu Header
         with st.sidebar:
@@ -61,6 +68,7 @@ def main():
             if st.button("🚪 Déconnexion", use_container_width=True, type="secondary"):
                 st.session_state['logged_in'] = False
                 st.session_state['role'] = None
+                st.session_state['show_auth'] = False # Return to Home page
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
