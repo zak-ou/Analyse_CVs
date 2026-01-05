@@ -4,7 +4,7 @@ from ui.auth import render_auth
 from ui.candidate_space import render_candidate_space
 from ui.recruiter_space import render_recruiter_space
 from ui.styles import load_css
-from app_logic.automation import run_pending_analyses
+# from app_logic.automation import run_pending_analyses (Unused)
 from ui.home import render_home
 import os
 

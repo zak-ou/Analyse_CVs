@@ -53,6 +53,7 @@ def run_pending_analyses():
             SELECT o.*, r.nom as r_nom, r.prenom as r_prenom, r.email as r_email 
             FROM offres o 
             JOIN recruteurs r ON o.recruteur_id = r.id
+            WHERE o.notifications_envoyees = 0
         """)
         all_jobs = c.fetchall()
         
@@ -70,7 +71,8 @@ def run_pending_analyses():
                      deadline_dt = datetime.datetime.strptime(deadline_str, "%Y-%m-%d")
                      is_past = datetime.date.today() > deadline_dt.date()
                 
-                if is_past and not job['notifications_envoyees']:
+                is_closed_manually = job['statut'] == 'clôturé'
+                if (is_past or is_closed_manually) and not job['notifications_envoyees']:
                     # PHASE 1: ANALYSIS (for those not yet analyzed)
                     apps = db.get_postulations_for_offer(job['id'])
                     unanalyzed = [app for app in apps if app['score'] is None and app['cv_url']]
@@ -121,6 +123,9 @@ def run_pending_analyses():
                     selected = scored_apps[:nb_postes]
                     refused = scored_apps[nb_postes:]
                     
+                    # Mark offer as notified immediately to avoid infinite retry loops if emails fail
+                    db.set_offer_notified(job['id'])
+                    
                     # 1. Process Selected
                     for entry in selected:
                         cand = entry['data']
@@ -130,8 +135,15 @@ def run_pending_analyses():
                         if needs_status_update or needs_email:
                             if needs_status_update:
                                 db.update_postulation_status(cand['id'], "Accepted", email_envoye=False)
-                            sent = email_service.send_acceptance_email(cand['email'], f"{cand['prenom']} {cand['nom']}", job['titre'])
-                            if sent:
+                            
+                            # Simple validation: must contain @
+                            if "@" in str(cand['email']):
+                                sent = email_service.send_acceptance_email(cand['email'], f"{cand['prenom']} {cand['nom']}", job['titre'])
+                                if sent:
+                                    db.update_postulation_status(cand['id'], "Accepted", email_envoye=True)
+                            else:
+                                print(f"⚠️ Skipping email for invalid address: {cand['email']}")
+                                # Mark as 'sent' anyway to avoid retrying junk data
                                 db.update_postulation_status(cand['id'], "Accepted", email_envoye=True)
 
                     # 2. Process Refused
@@ -143,12 +155,16 @@ def run_pending_analyses():
                         if needs_status_update or needs_email:
                             if needs_status_update:
                                 db.update_postulation_status(cand['id'], "Refused", email_envoye=False)
-                            sent = email_service.send_refusal_email(cand['email'], f"{cand['prenom']} {cand['nom']}", job['titre'])
-                            if sent:
+                            
+                            if "@" in str(cand['email']):
+                                sent = email_service.send_refusal_email(cand['email'], f"{cand['prenom']} {cand['nom']}", job['titre'])
+                                if sent:
+                                    db.update_postulation_status(cand['id'], "Refused", email_envoye=True)
+                            else:
+                                print(f"⚠️ Skipping email for invalid address: {cand['email']}")
                                 db.update_postulation_status(cand['id'], "Refused", email_envoye=True)
                     
                     # PHASE 3: NOTIFY RECRUITER WITH STATS
-                    # Re-calculate stats for the email
                     total_apps = len(apps)
                     avg_score = sum(x['score'] for x in scored_apps) / total_apps if total_apps > 0 else 0
                     
@@ -159,17 +175,16 @@ def run_pending_analyses():
                         'avg_score': avg_score
                     }
                     
-                    sent_r = email_service.send_offer_closed_email_to_recruiter(
-                        job['r_email'],
-                        f"{job['r_prenom']} {job['r_nom']}",
-                        job['titre'],
-                        stats
-                    )
+                    if "@" in str(job['r_email']):
+                        email_service.send_offer_closed_email_to_recruiter(
+                            job['r_email'],
+                            f"{job['r_prenom']} {job['r_nom']}",
+                            job['titre'],
+                            stats
+                        )
                     
-                    # Mark offer as notified only if we finished the cycle
-                    if sent_r:
-                        db.set_offer_notified(job['id'])
-                        print(f"✅ Offer '{job['titre']}' fully processed.")
+                    print(f"✅ Offer '{job['titre']}' fully processed (notifications attempted).")
+
                             
             except ValueError:
                 continue 

@@ -7,6 +7,9 @@ import os
 import datetime
 import importlib
 import json
+import base64
+from docx import Document
+from io import BytesIO
 importlib.reload(db)
 
 from streamlit_option_menu import option_menu
@@ -85,6 +88,33 @@ def show_market_job_dialog(offer):
     </style>
     {skills_html}
     """, unsafe_allow_html=True)
+
+@st.dialog("Visualiseur de CV", width="large")
+def view_cv_dialog(cv_path, candidate_name):
+    if not cv_path or not os.path.exists(cv_path):
+        st.error("Le fichier du CV est introuvable.")
+        return
+    
+    st.subheader(f"CV de {candidate_name}")
+    
+    file_extension = os.path.splitext(cv_path)[1].lower()
+    
+    if file_extension == ".pdf":
+        try:
+            with open(cv_path, "rb") as f:
+                base64_pdf = base64.b64encode(f.read()).decode('utf-8')
+            pdf_display = f'<iframe src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf"></iframe>'
+            st.markdown(pdf_display, unsafe_allow_html=True)
+        except Exception as e:
+            st.error(f"Erreur lors de l'affichage du PDF : {e}")
+            with open(cv_path, "rb") as f:
+                st.download_button("Télécharger le CV pour le voir", f, file_name=os.path.basename(cv_path))
+    elif file_extension in [".jpg", ".jpeg", ".png"]:
+        st.image(cv_path, use_container_width=True)
+    else:
+        st.info(f"Le format {file_extension} ne peut pas être prévisualisé directement.")
+        with open(cv_path, "rb") as f:
+            st.download_button("Télécharger le CV", f, file_name=os.path.basename(cv_path))
 
 def render_recruiter_space():
     # --- INTERNAL CSS (Mimicking Candidate Space) ---
@@ -486,9 +516,9 @@ def render_recruiter_space():
                 selected_job = job_titles[selected_job_title]
                 apps = db.get_postulations_for_offer(selected_job['id'])
                 
-                # Trigger automation to ensure statuses are up-to-date when viewing stats
-                from app_logic.automation import run_pending_analyses
-                run_pending_analyses()
+                # Statuses are updated by the background worker started in app.py
+                # Explicit call removed to improve performance and avoid redundant email processing
+
                 
                 # Fetch again to get updated statuses
                 apps = db.get_postulations_for_offer(selected_job['id'])
@@ -568,38 +598,121 @@ def render_recruiter_space():
                     st.markdown("---")
                     st.write("### 📋 Liste Détaillée des Candidats")
                     
-                    st.dataframe(
-                        df_apps[['Candidat', 'Email', 'Date', 'Score', 'Etat', 'Compétences', 'CV']],
-                        width="stretch",
-                        column_config={
-                            "Date": st.column_config.DateColumn(
-                                "Date Postulation",
-                                format="DD/MM/YYYY"
-                            ),
-                            "Score": st.column_config.ProgressColumn(
-                                "Score",
-                                format="%.1f / 100",
-                                min_value=0,
-                                max_value=100,
-                            ),
-                            "CV": st.column_config.LinkColumn(
-                                "Lien CV",
-                                display_text="Voir CV"
-                            ),
-                            "Email": st.column_config.TextColumn("Email")
-                        },
-                        hide_index=True
-                    )
+                    # Store app data in session state for the buttons to work reliably if needed
+                    st.session_state['current_apps'] = app_data
                     
-                    # EXPORT BUTTON
-                    csv_stat = pd.DataFrame(app_data).to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Télécharger le rapport (CSV)",
-                        data=csv_stat,
-                        file_name=f"rapport_{selected_job['titre']}.csv",
-                        mime="text/csv",
-                        key=f"dl_stat_sidebar_{selected_job['id']}"
-                    )
+                    # Display the list with a "Voir CV" action
+                    for i, app in enumerate(app_data):
+                        with st.container(border=True):
+                            c1, c2, c3, c4 = st.columns([0.3, 0.2, 0.3, 0.2])
+                            with c1:
+                                st.write(f"**{app['Candidat']}**")
+                                st.caption(app['Email'])
+                            with c2:
+                                st.write(f"Score: **{app['Score']:.1f}/100**")
+                                st.write(f"Statut: {app['Etat']}")
+                            with c3:
+                                st.write(f"Compétences: {app['Compétences'][:50]}..." if len(app['Compétences']) > 50 else f"Compétences: {app['Compétences']}")
+                            with c4:
+                                if st.button("👁️ Voir CV", key=f"view_cv_btn_{i}"):
+                                    view_cv_dialog(app['CV'], app['Candidat'])
+                    
+                    st.markdown("---")
+                    # ENHANCED EXPORT
+                    # Create a more detailed dataframe for Export
+                    export_rows = []
+                    for app in apps:
+                        details = {}
+                        if app['donnees_analysees']:
+                            try:
+                                details = json.loads(app['donnees_analysees'])
+                            except: pass
+                        
+                        row = {
+                            "Candidat": f"{app['prenom']} {app['nom']}",
+                            "Email": app['email'],
+                            "Date Postulation": app['date_postulation'],
+                            "Score Global": app['score'],
+                            "Statut Final": app['statut_postulation'],
+                            "Compétences Détectées": ", ".join(details.get('skills', [])),
+                            "Expérience Détectée": details.get('experience', 'N/A'),
+                            "Diplômes": details.get('education', 'N/A'),
+                            "Lien CV": app['cv_url']
+                        }
+                        export_rows.append(row)
+                    
+                    df_export = pd.DataFrame(export_rows)
+                    csv_stat = df_export.to_csv(index=False).encode('utf-8')
+                    
+                    col_dl1, col_dl2 = st.columns([0.5, 0.5])
+                    with col_dl1:
+                        st.download_button(
+                            label="📥 Télécharger le Rapport Complet (CSV)",
+                            data=csv_stat,
+                            file_name=f"rapport_complet_{selected_job['titre']}.csv",
+                            mime="text/csv",
+                            key=f"dl_stat_full_{selected_job['id']}",
+                            use_container_width=True
+                        )
+                    with col_dl2:
+                        # WORD REPORT GENERATION
+                        doc = Document()
+                        doc.add_heading(f"Rapport de Recrutement : {selected_job['titre']}", 0)
+                        
+                        doc.add_heading("Résumé de l'Offre", level=1)
+                        p = doc.add_paragraph()
+                        p.add_run(f"Domaine : ").bold = True
+                        p.add_run(f"{selected_job['domaine']}\n")
+                        p.add_run(f"Statut : ").bold = True
+                        p.add_run(f"{selected_job['statut']}\n")
+                        p.add_run(f"Nombre de postes : ").bold = True
+                        p.add_run(f"{selected_job['nombre_postes']}\n")
+                        p.add_run(f"Date du rapport : ").bold = True
+                        p.add_run(f"{datetime.datetime.now().strftime('%d/%m/%Y %H:%M')}")
+
+                        doc.add_heading("Statistiques Clés", level=1)
+                        table_stats = doc.add_table(rows=1, cols=3)
+                        table_stats.style = 'Table Grid'
+                        hdr_cells = table_stats.rows[0].cells
+                        hdr_cells[0].text = 'Total Candidatures'
+                        hdr_cells[1].text = 'Score Moyen'
+                        hdr_cells[2].text = 'Meilleur Score'
+                        
+                        row_cells = table_stats.add_row().cells
+                        row_cells[0].text = str(len(apps))
+                        row_cells[1].text = f"{avg_score:.2f}/100"
+                        row_cells[2].text = f"{max_score:.2f}/100"
+
+                        doc.add_heading("Détails des Candidats", level=1)
+                        table_cand = doc.add_table(rows=1, cols=4)
+                        table_cand.style = 'Table Grid'
+                        hdr_c = table_cand.rows[0].cells
+                        hdr_c[0].text = 'Nom du Candidat'
+                        hdr_c[1].text = 'Score'
+                        hdr_c[2].text = 'Statut'
+                        hdr_c[3].text = 'Compétences Principales'
+                        
+                        for row in export_rows:
+                            cells = table_cand.add_row().cells
+                            cells[0].text = row['Candidat']
+                            cells[1].text = f"{row['Score Global'] if row['Score Global'] is not None else 0:.1f}/100"
+                            cells[2].text = row['Statut Final']
+                            cells[3].text = row['Compétences Détectées'][:100] # Truncate for table
+                        
+                        # Save to stream
+                        doc_io = BytesIO()
+                        doc.save(doc_io)
+                        doc_io.seek(0)
+                        
+                        st.download_button(
+                            label="� Télécharger le Rapport (Word)",
+                            data=doc_io,
+                            file_name=f"rapport_{selected_job['titre']}.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            key=f"dl_stat_docx_{selected_job['id']}",
+                            use_container_width=True
+                        )
+
                     
     elif sidebar_menu == "Mon Profil":
         st.header("👤 Mon Profil")
