@@ -94,8 +94,8 @@ def render_candidate_space():
         
         menu = option_menu(
             menu_title=None,
-            options=["Offres d'Emploi", "Mes Candidatures", "Mon Profil"],
-            icons=["briefcase-fill", "file-earmark-check-fill", "person-fill"], 
+            options=["Offres d'Emploi", "Mes Candidatures", "Mon Profil", "Générer mon CV"],
+            icons=["briefcase-fill", "file-earmark-check-fill", "person-fill", "file-earmark-pdf-fill"], 
             menu_icon="cast",
             default_index=0,
             styles={
@@ -344,3 +344,400 @@ def render_candidate_space():
                 
                 if st.form_submit_button("Mettre à jour le profil", width="stretch"):
                     st.success("Profil mis à jour (simulation)")
+    
+    # --- SECTION : GÉNÉRER MON CV ---
+    elif menu == "Générer mon CV":
+        st.title("📄 Générer mon CV Professionnel")
+        st.caption("Remplissez les informations ci-dessous pour créer votre CV au format PDF")
+        st.markdown("---")
+        
+        # Initialize session state for form data
+        if 'cv_education_count' not in st.session_state:
+            st.session_state.cv_education_count = 1
+        if 'cv_experience_count' not in st.session_state:
+            st.session_state.cv_experience_count = 1
+        if 'cv_langues_count' not in st.session_state:
+            st.session_state.cv_langues_count = 1
+        
+        # Load existing CV data if available
+        existing_data = db.get_complete_cv_data(st.session_state['user_id'])
+        coordonnees_data = existing_data['coordonnees']
+        
+        # Tabs for different sections
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+            "📍 Coordonnées", 
+            "👤 Profil", 
+            "🎓 Éducation", 
+            "💼 Expériences", 
+            "🛠 Compétences", 
+            "🌍 Langues"
+        ])
+        
+        # TAB 1: Coordonnées
+        with tab1:
+            st.subheader("Coordonnées")
+            with st.form("coordonnees_form"):
+                nom_complet = st.text_input(
+                    "Nom Complet*", 
+                    value=coordonnees_data['nom_complet'] if coordonnees_data else "",
+                    placeholder="Ex: OUBAIH ZAKARIA"
+                )
+                email = st.text_input(
+                    "Email*", 
+                    value=coordonnees_data['email'] if coordonnees_data else "",
+                    placeholder="exemple@email.com"
+                )
+                col1, col2 = st.columns(2)
+                with col1:
+                    telephone = st.text_input(
+                        "Téléphone*", 
+                        value=coordonnees_data['telephone'] if coordonnees_data else "",
+                        placeholder="+212 675 900 477"
+                    )
+                with col2:
+                    ville_region = st.text_input(
+                        "Ville, Région*", 
+                        value=coordonnees_data['ville_region'] if coordonnees_data else "",
+                        placeholder="Smimou, Essaouira"
+                    )
+                
+                if st.form_submit_button("💾 Enregistrer les coordonnées", width="stretch"):
+                    if nom_complet and email and telephone and ville_region:
+                        # Save to session state temporarily
+                        st.session_state.cv_coordonnees = {
+                            'nom_complet': nom_complet,
+                            'email': email,
+                            'telephone': telephone,
+                            'ville_region': ville_region
+                        }
+                        st.success("✅ Coordonnées enregistrées!")
+                    else:
+                        st.error("⚠️ Veuillez remplir tous les champs obligatoires (*)")
+        
+        # TAB 2: Profil
+        with tab2:
+            st.subheader("Profil Professionnel")
+            st.caption("Rédigez un résumé de 3-5 lignes : objectif, formation, motivations, compétences clés")
+            with st.form("profil_form"):
+                profil = st.text_area(
+                    "Résumé*",
+                    value=coordonnees_data['profil'] if coordonnees_data else "",
+                    height=150,
+                    placeholder="Ex: Titulaire d'un Diplôme Universitaire de Technologie en Génie Informatique..."
+                )
+                
+                if st.form_submit_button("💾 Enregistrer le profil", width="stretch"):
+                    if profil:
+                        if 'cv_coordonnees' not in st.session_state:
+                            st.session_state.cv_coordonnees = {}
+                        st.session_state.cv_coordonnees['profil'] = profil
+                        st.success("✅ Profil enregistré!")
+                    else:
+                        st.error("⚠️ Veuillez remplir votre profil")
+        
+        # TAB 3: Éducation
+        with tab3:
+            st.subheader("Formation Académique")
+            
+            # Load existing education
+            existing_education = existing_data['education']
+            if existing_education and st.session_state.cv_education_count == 1:
+                st.session_state.cv_education_count = len(existing_education)
+            
+            education_entries = []
+            
+            for i in range(st.session_state.cv_education_count):
+                with st.expander(f"📚 Formation #{i+1}", expanded=(i==0)):
+                    existing_edu = existing_education[i] if i < len(existing_education) else None
+                    
+                    etablissement = st.text_input(
+                        "Établissement", 
+                        key=f"edu_etab_{i}",
+                        value=existing_edu['etablissement'] if existing_edu else "",
+                        placeholder="Ex: École Supérieure de Technologie de Guelmim"
+                    )
+                    diplome = st.text_input(
+                        "Diplôme", 
+                        key=f"edu_diplome_{i}",
+                        value=existing_edu['diplome'] if existing_edu else "",
+                        placeholder="Ex: Diplôme Universitaire de Technologie – DUT"
+                    )
+                    periode = st.text_input(
+                        "Période", 
+                        key=f"edu_periode_{i}",
+                        value=existing_edu['periode'] if existing_edu else "",
+                        placeholder="Ex: 2023–2025"
+                    )
+                    details = st.text_area(
+                        "Détails (un par ligne)", 
+                        key=f"edu_details_{i}",
+                        value=existing_edu['details'] if existing_edu else "",
+                        placeholder="Solides bases en informatique\nProgrammation orientée objet",
+                        height=80
+                    )
+                    
+                    if etablissement or diplome:
+                        education_entries.append({
+                            'etablissement': etablissement,
+                            'diplome': diplome,
+                            'periode': periode,
+                            'details': details
+                        })
+            
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("➕ Ajouter une formation", width="stretch"):
+                    st.session_state.cv_education_count += 1
+                    st.rerun()
+            with col2:
+                if st.button("💾 Enregistrer l'éducation", width="stretch", type="primary"):
+                    st.session_state.cv_education = education_entries
+                    st.success("✅ Formations enregistrées!")
+        
+        # TAB 4: Expériences
+        with tab4:
+            st.subheader("Expériences Professionnelles")
+            
+            # Load existing experience
+            existing_experience = existing_data['experience']
+            if existing_experience and st.session_state.cv_experience_count == 1:
+                st.session_state.cv_experience_count = len(existing_experience)
+            
+            experience_entries = []
+            
+            for i in range(st.session_state.cv_experience_count):
+                with st.expander(f"💼 Expérience #{i+1}", expanded=(i==0)):
+                    existing_exp = existing_experience[i] if i < len(existing_experience) else None
+                    
+                    entreprise = st.text_input(
+                        "Entreprise", 
+                        key=f"exp_entreprise_{i}",
+                        value=existing_exp['entreprise'] if existing_exp else "",
+                        placeholder="Ex: Managem – Filiale Akka"
+                    )
+                    titre_mission = st.text_input(
+                        "Titre de la mission", 
+                        key=f"exp_titre_{i}",
+                        value=existing_exp['titre_mission'] if existing_exp else "",
+                        placeholder="Ex: Développement d'une application web"
+                    )
+                    periode = st.text_input(
+                        "Période", 
+                        key=f"exp_periode_{i}",
+                        value=existing_exp['periode'] if existing_exp else "",
+                        placeholder="Ex: Juillet 2023"
+                    )
+                    realisations = st.text_area(
+                        "Réalisations (une par ligne)", 
+                        key=f"exp_realisations_{i}",
+                        value=existing_exp['realisations'] if existing_exp else "",
+                        placeholder="Développement d'une API REST avec Spring Boot\nIntégration d'une base de données MySQL",
+                        height=100
+                    )
+                    
+                    if entreprise or titre_mission:
+                        experience_entries.append({
+                            'entreprise': entreprise,
+                            'titre_mission': titre_mission,
+                            'periode': periode,
+                            'realisations': realisations
+                        })
+            
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("➕ Ajouter une expérience", width="stretch"):
+                    st.session_state.cv_experience_count += 1
+                    st.rerun()
+            with col2:
+                if st.button("💾 Enregistrer les expériences", width="stretch", type="primary"):
+                    st.session_state.cv_experience = experience_entries
+                    st.success("✅ Expériences enregistrées!")
+        
+        # TAB 5: Compétences
+        with tab5:
+            st.subheader("Compétences")
+            
+            existing_skills = existing_data['skills']
+            
+            with st.form("skills_form"):
+                st.markdown("**Technical Skills**")
+                languages = st.text_input(
+                    "Languages", 
+                    value=existing_skills['languages'] if existing_skills else "",
+                    placeholder="Ex: C, Java, PHP, SQL, JavaScript, Python"
+                )
+                technologies = st.text_input(
+                    "Technologies/Frameworks", 
+                    value=existing_skills['technologies'] if existing_skills else "",
+                    placeholder="Ex: Spring Boot, Flutter, React JS, Node.js"
+                )
+                databases = st.text_input(
+                    "Database Management", 
+                    value=existing_skills['databases'] if existing_skills else "",
+                    placeholder="Ex: MySQL, MongoDB, PostgreSQL"
+                )
+                tools = st.text_input(
+                    "Developer Tools", 
+                    value=existing_skills['tools'] if existing_skills else "",
+                    placeholder="Ex: Git, VS Code, Postman, Docker"
+                )
+                networking = st.text_input(
+                    "Networking Fundamentals (optionnel)", 
+                    value=existing_skills['networking'] if existing_skills else "",
+                    placeholder="Ex: TCP/IP, HTTP, DNS"
+                )
+                
+                st.markdown("**Soft Skills**")
+                soft_skills = st.text_input(
+                    "Soft Skills (séparés par des virgules)", 
+                    value=existing_skills['soft_skills'] if existing_skills else "",
+                    placeholder="Ex: Team Collaboration, Self-Learning, Problem Solving"
+                )
+                
+                if st.form_submit_button("💾 Enregistrer les compétences", width="stretch"):
+                    st.session_state.cv_skills = {
+                        'languages': languages,
+                        'technologies': technologies,
+                        'databases': databases,
+                        'tools': tools,
+                        'networking': networking,
+                        'soft_skills': soft_skills
+                    }
+                    st.success("✅ Compétences enregistrées!")
+        
+        # TAB 6: Langues
+        with tab6:
+            st.subheader("Langues")
+            
+            # Load existing langues
+            existing_langues = existing_data['langues']
+            if existing_langues and st.session_state.cv_langues_count == 1:
+                st.session_state.cv_langues_count = len(existing_langues)
+            
+            langues_entries = []
+            
+            for i in range(st.session_state.cv_langues_count):
+                col1, col2 = st.columns([1, 1])
+                existing_lang = existing_langues[i] if i < len(existing_langues) else None
+                
+                with col1:
+                    langue = st.text_input(
+                        f"Langue #{i+1}", 
+                        key=f"lang_langue_{i}",
+                        value=existing_lang['langue'] if existing_lang else "",
+                        placeholder="Ex: Arabe"
+                    )
+                with col2:
+                    niveau = st.selectbox(
+                        f"Niveau #{i+1}", 
+                        key=f"lang_niveau_{i}",
+                        options=["", "Langue maternelle", "Courant", "Intermédiaire", "Débutant"],
+                        index=["", "Langue maternelle", "Courant", "Intermédiaire", "Débutant"].index(existing_lang['niveau']) if existing_lang and existing_lang['niveau'] in ["", "Langue maternelle", "Courant", "Intermédiaire", "Débutant"] else 0
+                    )
+                
+                if langue and niveau:
+                    langues_entries.append({
+                        'langue': langue,
+                        'niveau': niveau
+                    })
+            
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("➕ Ajouter une langue", width="stretch"):
+                    st.session_state.cv_langues_count += 1
+                    st.rerun()
+            with col2:
+                if st.button("💾 Enregistrer les langues", width="stretch", type="primary"):
+                    st.session_state.cv_langues = langues_entries
+                    st.success("✅ Langues enregistrées!")
+        
+        # Action buttons at the bottom
+        st.markdown("---")
+        st.subheader("🎬 Actions")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("💾 Enregistrer toutes les données", width="stretch", type="secondary"):
+                # Save all data to database
+                try:
+                    # Get data from session state or forms
+                    coordonnees = st.session_state.get('cv_coordonnees', {})
+                    
+                    if not coordonnees or not coordonnees.get('nom_complet'):
+                        st.error("⚠️ Veuillez d'abord remplir vos coordonnées!")
+                    else:
+                        # Save coordonnees
+                        db.save_cv_coordonnees(
+                            st.session_state['user_id'],
+                            coordonnees.get('nom_complet', ''),
+                            coordonnees.get('email', ''),
+                            coordonnees.get('telephone', ''),
+                            coordonnees.get('ville_region', ''),
+                            coordonnees.get('profil', '')
+                        )
+                        
+                        # Save education
+                        education = st.session_state.get('cv_education', [])
+                        if education:
+                            db.save_cv_education(st.session_state['user_id'], education)
+                        
+                        # Save experience
+                        experience = st.session_state.get('cv_experience', [])
+                        if experience:
+                            db.save_cv_experience(st.session_state['user_id'], experience)
+                        
+                        # Save skills
+                        skills = st.session_state.get('cv_skills', {})
+                        if skills:
+                            db.save_cv_skills(
+                                st.session_state['user_id'],
+                                skills.get('languages', ''),
+                                skills.get('technologies', ''),
+                                skills.get('databases', ''),
+                                skills.get('tools', ''),
+                                skills.get('networking', ''),
+                                skills.get('soft_skills', '')
+                            )
+                        
+                        # Save langues
+                        langues = st.session_state.get('cv_langues', [])
+                        if langues:
+                            db.save_cv_langues(st.session_state['user_id'], langues)
+                        
+                        st.success("✅ Toutes vos données ont été enregistrées dans la base de données!")
+                except Exception as e:
+                    st.error(f"❌ Erreur lors de l'enregistrement: {str(e)}")
+        
+        with col2:
+            if st.button("📥 Générer et télécharger mon CV", width="stretch", type="primary"):
+                try:
+                    from services.cv_generator_service import generate_candidate_cv
+                    
+                    # Generate CV
+                    cv_data_raw = db.get_complete_cv_data(st.session_state['user_id'])
+                    
+                    if not cv_data_raw['coordonnees']:
+                        st.error("⚠️ Veuillez d'abord remplir et enregistrer vos coordonnées!")
+                    else:
+                        nom_complet = cv_data_raw['coordonnees']['nom_complet']
+                        cv_path = generate_candidate_cv(st.session_state['user_id'], nom_complet)
+                        
+                        if cv_path and os.path.exists(cv_path):
+                            with open(cv_path, 'rb') as f:
+                                pdf_data = f.read()
+                            
+                            st.download_button(
+                                label="📄 Télécharger mon CV",
+                                data=pdf_data,
+                                file_name=f"CV_{nom_complet.replace(' ', '_')}.pdf",
+                                mime="application/pdf",
+                                type="primary",
+                                use_container_width=True
+                            )
+                            st.success("✅ CV généré avec succès!")
+                        else:
+                            st.error("❌ Erreur lors de la génération du CV")
+                except Exception as e:
+                    st.error(f"❌ Erreur: {str(e)}")
+

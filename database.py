@@ -63,6 +63,62 @@ def init_db():
                     FOREIGN KEY (offre_id) REFERENCES offres (id)
                 )''')
     
+    # 5. CV Data Tables
+    c.execute('''CREATE TABLE IF NOT EXISTS cv_coordonnees (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    candidat_id INTEGER UNIQUE,
+                    nom_complet TEXT,
+                    email TEXT,
+                    telephone TEXT,
+                    ville_region TEXT,
+                    profil TEXT,
+                    date_modification TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (candidat_id) REFERENCES candidats (id)
+                )''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS cv_education (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    candidat_id INTEGER,
+                    etablissement TEXT,
+                    diplome TEXT,
+                    periode TEXT,
+                    details TEXT,
+                    ordre INTEGER DEFAULT 0,
+                    FOREIGN KEY (candidat_id) REFERENCES candidats (id)
+                )''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS cv_experience (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    candidat_id INTEGER,
+                    entreprise TEXT,
+                    titre_mission TEXT,
+                    periode TEXT,
+                    realisations TEXT,
+                    ordre INTEGER DEFAULT 0,
+                    FOREIGN KEY (candidat_id) REFERENCES candidats (id)
+                )''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS cv_skills (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    candidat_id INTEGER UNIQUE,
+                    languages TEXT,
+                    technologies TEXT,
+                    databases TEXT,
+                    tools TEXT,
+                    networking TEXT,
+                    soft_skills TEXT,
+                    FOREIGN KEY (candidat_id) REFERENCES candidats (id)
+                )''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS cv_langues (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    candidat_id INTEGER,
+                    langue TEXT,
+                    niveau TEXT,
+                    ordre INTEGER DEFAULT 0,
+                    FOREIGN KEY (candidat_id) REFERENCES candidats (id)
+                )''')
+    
     # Check for missing columns and add them (Migration)
     try:
         c.execute("ALTER TABLE offres ADD COLUMN nombre_postes INTEGER DEFAULT 1")
@@ -279,3 +335,171 @@ def update_postulation_status(postulation_id, statut, email_envoye=False):
     c.execute("UPDATE postulations SET statut = ?, email_envoye = ? WHERE id = ?", (statut, email_envoye, postulation_id))
     conn.commit()
     conn.close()
+
+# --- CV Data Management ---
+
+def save_cv_coordonnees(candidat_id, nom_complet, email, telephone, ville_region, profil):
+    """Save or update candidate's CV contact information and profile."""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    try:
+        # Check if exists
+        c.execute("SELECT id FROM cv_coordonnees WHERE candidat_id = ?", (candidat_id,))
+        if c.fetchone():
+            c.execute("""UPDATE cv_coordonnees 
+                        SET nom_complet=?, email=?, telephone=?, ville_region=?, profil=?, date_modification=CURRENT_TIMESTAMP
+                        WHERE candidat_id=?""", 
+                     (nom_complet, email, telephone, ville_region, profil, candidat_id))
+        else:
+            c.execute("""INSERT INTO cv_coordonnees (candidat_id, nom_complet, email, telephone, ville_region, profil)
+                        VALUES (?, ?, ?, ?, ?, ?)""",
+                     (candidat_id, nom_complet, email, telephone, ville_region, profil))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error saving CV coordonnees: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_cv_coordonnees(candidat_id):
+    """Get candidate's CV contact information."""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM cv_coordonnees WHERE candidat_id = ?", (candidat_id,))
+    data = c.fetchone()
+    conn.close()
+    return data
+
+def save_cv_education(candidat_id, education_list):
+    """Save education entries. education_list is a list of dicts with keys: etablissement, diplome, periode, details."""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    try:
+        # Delete existing
+        c.execute("DELETE FROM cv_education WHERE candidat_id = ?", (candidat_id,))
+        # Insert new
+        for i, edu in enumerate(education_list):
+            c.execute("""INSERT INTO cv_education (candidat_id, etablissement, diplome, periode, details, ordre)
+                        VALUES (?, ?, ?, ?, ?, ?)""",
+                     (candidat_id, edu.get('etablissement', ''), edu.get('diplome', ''), 
+                      edu.get('periode', ''), edu.get('details', ''), i))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error saving education: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_cv_education(candidat_id):
+    """Get candidate's education entries."""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM cv_education WHERE candidat_id = ? ORDER BY ordre", (candidat_id,))
+    data = c.fetchall()
+    conn.close()
+    return data
+
+def save_cv_experience(candidat_id, experience_list):
+    """Save experience entries."""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    try:
+        c.execute("DELETE FROM cv_experience WHERE candidat_id = ?", (candidat_id,))
+        for i, exp in enumerate(experience_list):
+            c.execute("""INSERT INTO cv_experience (candidat_id, entreprise, titre_mission, periode, realisations, ordre)
+                        VALUES (?, ?, ?, ?, ?, ?)""",
+                     (candidat_id, exp.get('entreprise', ''), exp.get('titre_mission', ''), 
+                      exp.get('periode', ''), exp.get('realisations', ''), i))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error saving experience: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_cv_experience(candidat_id):
+    """Get candidate's experience entries."""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM cv_experience WHERE candidat_id = ? ORDER BY ordre", (candidat_id,))
+    data = c.fetchall()
+    conn.close()
+    return data
+
+def save_cv_skills(candidat_id, languages, technologies, databases, tools, networking, soft_skills):
+    """Save technical and soft skills."""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    try:
+        c.execute("SELECT id FROM cv_skills WHERE candidat_id = ?", (candidat_id,))
+        if c.fetchone():
+            c.execute("""UPDATE cv_skills 
+                        SET languages=?, technologies=?, databases=?, tools=?, networking=?, soft_skills=?
+                        WHERE candidat_id=?""",
+                     (languages, technologies, databases, tools, networking, soft_skills, candidat_id))
+        else:
+            c.execute("""INSERT INTO cv_skills (candidat_id, languages, technologies, databases, tools, networking, soft_skills)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                     (candidat_id, languages, technologies, databases, tools, networking, soft_skills))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error saving skills: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_cv_skills(candidat_id):
+    """Get candidate's skills."""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM cv_skills WHERE candidat_id = ?", (candidat_id,))
+    data = c.fetchone()
+    conn.close()
+    return data
+
+def save_cv_langues(candidat_id, langues_list):
+    """Save language entries."""
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    try:
+        c.execute("DELETE FROM cv_langues WHERE candidat_id = ?", (candidat_id,))
+        for i, lang in enumerate(langues_list):
+            c.execute("""INSERT INTO cv_langues (candidat_id, langue, niveau, ordre)
+                        VALUES (?, ?, ?, ?)""",
+                     (candidat_id, lang.get('langue', ''), lang.get('niveau', ''), i))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error saving languages: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_cv_langues(candidat_id):
+    """Get candidate's languages."""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute("SELECT * FROM cv_langues WHERE candidat_id = ? ORDER BY ordre", (candidat_id,))
+    data = c.fetchall()
+    conn.close()
+    return data
+
+def get_complete_cv_data(candidat_id):
+    """Get all CV data for a candidate."""
+    return {
+        'coordonnees': get_cv_coordonnees(candidat_id),
+        'education': get_cv_education(candidat_id),
+        'experience': get_cv_experience(candidat_id),
+        'skills': get_cv_skills(candidat_id),
+        'langues': get_cv_langues(candidat_id)
+    }
+

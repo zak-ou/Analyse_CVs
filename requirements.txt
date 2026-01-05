@@ -9,3 +9,4 @@ Pillow
 nltk
 spacy
 python-docx
+reportlab
