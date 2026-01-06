@@ -181,6 +181,36 @@ def verify_user(email, password, role):
     conn.close()
     return user # Returns Row object or None
 
+def get_user_by_id(user_id, role):
+    table = 'recruteurs' if role == 'Recruteur' else 'candidats'
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    c.execute(f"SELECT * FROM {table} WHERE id = ?", (user_id,))
+    user = c.fetchone()
+    conn.close()
+    return user
+
+def update_candidate_profile(user_id, num_tele, bio, photo_url, linkedin, github, portfolio):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("""UPDATE candidats 
+                 SET num_tele=?, bio=?, photo_url=?, linkedin_url=?, github_url=?, portfolio_url=?
+                 WHERE id=?""", (num_tele, bio, photo_url, linkedin, github, portfolio, user_id))
+    conn.commit()
+    conn.close()
+    return True
+
+def update_recruiter_profile(user_id, nom, prenom, num_tele, photo_url, ent_nom, ent_site, ent_desc):
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("""UPDATE recruteurs 
+                 SET nom=?, prenom=?, num_tele=?, photo_url=?, entreprise_nom=?, entreprise_site=?, entreprise_description=?
+                 WHERE id=?""", (nom, prenom, num_tele, photo_url, ent_nom, ent_site, ent_desc, user_id))
+    conn.commit()
+    conn.close()
+    return True
+
 # --- Job Management (Offres) ---
 
 def create_offer(titre, description, competences, exp_min, date_limite, recruteur_id, domaine, nombre_postes=1):

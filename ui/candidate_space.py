@@ -320,30 +320,111 @@ def render_candidate_space():
 
     # --- SECTION : MON PROFIL ---
     elif menu == "Mon Profil":
-        st.title("👤 Mon Profil")
-        st.markdown("---")
+        import services.profile_service as ps
         
-        col1, col2 = st.columns([1, 2])
-        with col1:
-             st.markdown(f"""
-                <div style="text-align: center; padding: 20px; background: white; border-radius: 15px; border: 1px solid #E0E0E0;">
-                    <div style="width: 100px; height: 100px; background: #6C5CE7; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 3rem; margin: 0 auto 15px;">
-                        {st.session_state['username'][0].upper()}
-                    </div>
-                    <h3 style="margin: 0;">{st.session_state['username']}</h3>
-                    <p style="color: #636E72;">{st.session_state['role']}</p>
-                </div>
-             """, unsafe_allow_html=True)
+        # Fresh fetch of user data
+        user_data = db.get_user_by_id(st.session_state['user_id'], st.session_state['role'])
+        if user_data:
+            user_data = dict(user_data)
+        cv_data = db.get_complete_cv_data(st.session_state['user_id'])
+        completion = ps.calculate_candidate_completion(user_data, cv_data)
         
-        with col2:
-            st.subheader("Informations Personnelles")
-            with st.form("profile_form"):
-                st.text_input("Nom Complet", value=st.session_state['username'], disabled=True)
-                st.text_input("Email", value="utilisateur@example.com", disabled=True) 
-                st.text_input("Numéro de Téléphone", value="+212 6XX XXX XXX")
+        # 1. PROFILE HEADER
+        # Robustly handle image or initials
+        avatar_html = user_data['prenom'][0].upper()
+        if user_data.get('photo_url') and os.path.exists(user_data['photo_url']):
+            try:
+                with open(user_data["photo_url"], "rb") as img_file:
+                    b64_content = base64.b64encode(img_file.read()).decode()
+                    avatar_html = f'<img src="data:image/png;base64,{b64_content}" />'
+            except:
+                pass
+
+        st.markdown(f"""
+<div class="profile-header-container">
+<div class="profile-avatar-large">
+{avatar_html}
+</div>
+<div class="profile-name">{user_data['prenom']} {user_data['nom']}</div>
+<span class="profile-role-badge">Candidat Actif</span>
+<div class="profile-progress-container">
+<div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 0.85rem;">
+<span>Complétion du profil</span>
+<span>{completion}%</span>
+</div>
+<div class="profile-progress-bar">
+<div class="profile-progress-fill" style="width: {completion}%"></div>
+</div>
+</div>
+</div>
+""", unsafe_allow_html=True)
+
+        # 2. PROFILE CONTENT (TABS)
+        p_tab1, p_tab2, p_tab3 = st.tabs(["👤 Infos Personnelles", "🌐 Réseaux & Bio", "⚙️ Paramètres"])
+        
+        with p_tab1:
+            with st.form("edit_profile_main"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    u_prenom = st.text_input("Prénom", value=user_data['prenom'])
+                    u_nom = st.text_input("Nom", value=user_data['nom'])
+                with col2:
+                    u_email = st.text_input("Email", value=user_data['email'], disabled=True)
+                    u_tele = st.text_input("Numéro de Téléphone", value=user_data['num_tele'] or "")
                 
-                if st.form_submit_button("Mettre à jour le profil", width="stretch"):
-                    st.success("Profil mis à jour (simulation)")
+                u_photo = st.file_uploader("Modifier la photo de profil", type=['png', 'jpg', 'jpeg'])
+                
+                if st.form_submit_button("Sauvegarder les informations", width="stretch", type="primary"):
+                    photo_path = user_data['photo_url']
+                    if u_photo:
+                        os.makedirs("data/profiles", exist_ok=True)
+                        photo_path = f"data/profiles/avatar_{st.session_state['user_id']}.png"
+                        with open(photo_path, "wb") as f:
+                            f.write(u_photo.getbuffer())
+                    
+                    db.update_candidate_profile(
+                        st.session_state['user_id'], 
+                        u_tele, 
+                        user_data['bio'], 
+                        photo_path,
+                        user_data['linkedin_url'],
+                        user_data['github_url'],
+                        user_data['portfolio_url']
+                    )
+                    st.success("Profil mis à jour avec succès !")
+                    st.rerun()
+
+        with p_tab2:
+            with st.form("edit_profile_bio"):
+                st.markdown("##### Ma Bio")
+                u_bio = st.text_area("Décrivez-vous en quelques lignes", value=user_data['bio'] or "", height=150)
+                
+                st.markdown("##### Mes Réseaux")
+                c1, c2 = st.columns(2)
+                with c1:
+                    u_lin = st.text_input("LinkedIn URL", value=user_data['linkedin_url'] or "", placeholder="https://linkedin.com/in/...")
+                    u_git = st.text_input("GitHub URL", value=user_data['github_url'] or "", placeholder="https://github.com/...")
+                with c2:
+                    u_port = st.text_input("Portfolio URL", value=user_data['portfolio_url'] or "", placeholder="https://mon-site.com")
+                
+                if st.form_submit_button("Mettre à jour ma bio et mes réseaux", width="stretch", type="primary"):
+                    db.update_candidate_profile(
+                        st.session_state['user_id'],
+                        user_data['num_tele'],
+                        u_bio,
+                        user_data['photo_url'],
+                        u_lin,
+                        u_git,
+                        u_port
+                    )
+                    st.success("Informations mises à jour !")
+                    st.rerun()
+
+        with p_tab3:
+            st.info("Les paramètres de sécurité et de compte seront disponibles prochainement.")
+            if st.button("🚪 Déconnexion", width="stretch", type="secondary"):
+                st.session_state['logged_in'] = False
+                st.rerun()
     
     # --- SECTION : GÉNÉRER MON CV ---
     elif menu == "Générer mon CV":

@@ -715,16 +715,101 @@ def render_recruiter_space():
 
                     
     elif sidebar_menu == "Mon Profil":
-        st.header("👤 Mon Profil")
-        st.markdown("---")
-        # Profile Content (Simplified)
-        c1, c2 = st.columns([1, 2])
-        with c1:
-             st.info(f"**Email:** {st.session_state.get('username', 'User')}@recrutiq.com") 
-             st.write(f"**Rôle:** {st.session_state['role']}")
-        with c2:
-            with st.form("profile_form"):
-                st.text_input("Nom Complet", value=st.session_state['username'])
-                st.text_input("Entreprise", value="Ma Société")
-                if st.form_submit_button("Mettre à jour"):
-                    st.success("Profil mis à jour.")
+        import services.profile_service as ps
+        
+        # Fresh fetch
+        user_data = db.get_user_by_id(st.session_state['user_id'], st.session_state['role'])
+        if user_data:
+            user_data = dict(user_data)
+        completion = ps.calculate_recruiter_completion(user_data)
+        
+        # 1. PROFILE HEADER
+        avatar_html = user_data['prenom'][0].upper()
+        if user_data.get('photo_url') and os.path.exists(user_data['photo_url']):
+            try:
+                with open(user_data["photo_url"], "rb") as img_file:
+                    b64_content = base64.b64encode(img_file.read()).decode()
+                    avatar_html = f'<img src="data:image/png;base64,{b64_content}" />'
+            except:
+                pass
+
+        st.markdown(f"""
+<div class="profile-header-container">
+<div class="profile-avatar-large">
+{avatar_html}
+</div>
+<div class="profile-name">{user_data['prenom']} {user_data['nom']}</div>
+<span class="profile-role-badge">Recruteur Vérifié</span>
+<div class="profile-progress-container">
+<div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 0.85rem;">
+<span>Complétion du profil</span>
+<span>{completion}%</span>
+</div>
+<div class="profile-progress-bar">
+<div class="profile-progress-fill" style="width: {completion}%"></div>
+</div>
+</div>
+</div>
+""", unsafe_allow_html=True)
+
+        # 2. CONTENT TABS
+        r_tab1, r_tab2, r_tab3 = st.tabs(["👤 Infos Personnelles", "🏢 Entreprise", "⚙️ Paramètres"])
+        
+        with r_tab1:
+            with st.form("edit_recruiter_main"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    u_prenom = st.text_input("Prénom", value=user_data['prenom'])
+                    u_nom = st.text_input("Nom", value=user_data['nom'])
+                with col2:
+                    u_email = st.text_input("Email", value=user_data['email'], disabled=True)
+                    u_tele = st.text_input("Numéro de Téléphone", value=user_data['num_tele'] or "")
+                
+                u_photo = st.file_uploader("Modifier la photo de profil", type=['png', 'jpg', 'jpeg'])
+                
+                if st.form_submit_button("Sauvegarder les informations", width="stretch", type="primary"):
+                    photo_path = user_data['photo_url']
+                    if u_photo:
+                        os.makedirs("data/profiles", exist_ok=True)
+                        photo_path = f"data/profiles/avatar_rec_{st.session_state['user_id']}.png"
+                        with open(photo_path, "wb") as f:
+                            f.write(u_photo.getbuffer())
+                    
+                    db.update_recruiter_profile(
+                        st.session_state['user_id'],
+                        u_nom,
+                        u_prenom,
+                        u_tele,
+                        photo_path,
+                        user_data['entreprise_nom'],
+                        user_data['entreprise_site'],
+                        user_data['entreprise_description']
+                    )
+                    st.success("Profil mis à jour !")
+                    st.rerun()
+
+        with r_tab2:
+            with st.form("edit_recruiter_company"):
+                u_ent_nom = st.text_input("Nom de l'entreprise", value=user_data['entreprise_nom'] or "")
+                u_ent_site = st.text_input("Site web", value=user_data['entreprise_site'] or "", placeholder="https://www.entreprise.com")
+                u_ent_desc = st.text_area("Description de l'entreprise", value=user_data['entreprise_description'] or "", height=150)
+                
+                if st.form_submit_button("Mettre à jour les infos entreprise", width="stretch", type="primary"):
+                    db.update_recruiter_profile(
+                        st.session_state['user_id'],
+                        user_data['nom'],
+                        user_data['prenom'],
+                        user_data['num_tele'],
+                        user_data['photo_url'],
+                        u_ent_nom,
+                        u_ent_site,
+                        u_ent_desc
+                    )
+                    st.success("Informations entreprise mises à jour !")
+                    st.rerun()
+
+        with r_tab3:
+            st.info("Les paramètres de sécurité seront bientôt disponibles.")
+            if st.button("🚪 Déconnexion", width="stretch", type="secondary"):
+                st.session_state['logged_in'] = False
+                st.rerun()
